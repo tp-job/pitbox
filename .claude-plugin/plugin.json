@@ -1,0 +1,11 @@
+{
+  "name": "pitbox",
+  "version": "0.1.0",
+  "description": "A pit wall for Claude Code: a band above the prompt with the model, usage, skills, git, CI and evals, and a sidebar with Claude's phase plan and recent tool calls.",
+  "author": { "name": "tp-job", "url": "https://github.com/tp-job" },
+  "homepage": "https://github.com/tp-job/pitbox",
+  "repository": "https://github.com/tp-job/pitbox",
+  "license": "MIT",
+  "keywords": ["mod", "status", "sidebar", "phases", "git", "ci", "evals", "usage"],
+  "types": "./types/index.d.ts"
+}
