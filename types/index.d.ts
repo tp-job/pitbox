@@ -18,7 +18,7 @@ export type SessionInfo = {
   usd: number | null
   contextPercent: number | null
   /** Plan windows: `five_hour`, `seven_day`, a gateway's `spend_limit`. */
-  limits: { kind: string; percentUsed: number }[]
+  limits: { kind: string; percentUsed: number; resetsAt?: string }[]
 }
 
 /** The latest GitHub Actions run on the current branch, from `gh run list`. */

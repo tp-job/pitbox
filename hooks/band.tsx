@@ -1,6 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
+import { barRows, gaugeRow, INK, timeLeft } from './draw'
+import type { BarRow, Gauge } from './draw'
 import type { CiInfo, EvalInfo, RepoInfo, SessionInfo, UsedInfo } from '../types'
 
 const repo = atom({ plugin: 'pitbox', key: 'bandRepo' } as const, null)
@@ -75,7 +77,7 @@ async function refreshSession($: EngineInterface): Promise<void> {
       model,
       usd: usage.cost?.usd ?? null,
       contextPercent: usage.context.percent ?? null,
-      limits: usage.rateLimits.map(limit => ({ kind: limit.kind, percentUsed: limit.percentUsed })),
+      limits: usage.rateLimits.map(limit => ({ kind: limit.kind, percentUsed: limit.percentUsed, resetsAt: limit.resetsAt })),
     }
     await update($, session, () => info)
   } catch {
@@ -231,7 +233,101 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Svg, Text } = $.ui.resolve(e)
+
+    // The desktop and mobile apps draw SVG: ring gauges and progress rows, as in a mission board.
+    if (e.surface === 'desktop' || e.surface === 'mobile') {
+      const now = await $.clock.now()
+      const gauges: Gauge[] = []
+
+      if (live !== null) {
+        if (live.contextPercent !== null) gauges.push({ percent: live.contextPercent, caption: 'context', icon: 'stack' })
+
+        for (const limit of live.limits ?? []) {
+          const left = timeLeft(limit.resetsAt, now)
+          const name = limit.kind === 'five_hour' ? '5h' : limit.kind === 'seven_day' ? '7d' : limit.kind
+          gauges.push({
+            percent: limit.percentUsed,
+            caption: left === '' ? name : `${name} · resets in ${left}`,
+            icon: limit.kind === 'seven_day' ? 'calendar' : 'clock',
+          })
+        }
+      }
+
+      const rows: BarRow[] = []
+
+      if (info !== null && result !== null) {
+        const fraction = result.passed / result.total
+        const pct = Math.round(fraction * 100)
+        const sync = `${info.ahead > 0 ? ` ↑${info.ahead}` : ''}${info.behind > 0 ? ` ↓${info.behind}` : ''}`
+        const dirty = info.changed + info.untracked
+        rows.push({
+          label: `${info.branch}${sync} · ${dirty === 0 ? 'clean' : `${dirty} changed`}`,
+          mark: pct >= 85 ? 'tick' : pct < 60 ? 'bang' : 'dot',
+          fraction,
+          pillWord: 'Evals',
+          pillCount: `${result.passed}/${result.total}`,
+          pillIcon: pct === 100 ? 'tick' : pct < 60 ? 'cross' : undefined,
+          color: pct >= 85 ? INK.green : pct >= 60 ? INK.purple : INK.red,
+          parts: 4,
+        })
+      }
+
+      if (build !== null) {
+        const isDone = build.status === 'completed'
+        const isPass = isDone && build.conclusion === 'success'
+        rows.push({
+          label: `CI · ${build.workflow}`,
+          mark: !isDone ? 'dot' : isPass ? 'tick' : 'bang',
+          fraction: isDone ? 1 : 0.5,
+          pillWord: !isDone ? 'Running' : isPass ? 'Done' : 'Failed',
+          pillCount: '',
+          pillIcon: !isDone ? undefined : isPass ? 'tick' : 'cross',
+          color: !isDone ? INK.purple : isPass ? INK.green : INK.red,
+          parts: 1,
+          right: !isDone ? build.status.replace(/_/g, ' ') : build.conclusion,
+        })
+      }
+
+      // The branch alone, when there is no eval report to draw it beside.
+      const plainBranch =
+        info !== null && result === null
+          ? `⎇ ${info.branch} · ${info.changed + info.untracked === 0 ? 'clean' : `${info.changed} changed, ${info.untracked} untracked`}`
+          : ''
+
+      const skills: Part[][] = []
+
+      if (reached.skills.length > 0 || reached.spokes.length > 0) {
+        const group: Part[] = [
+          { text: 'skill ', dim: true },
+          { text: reached.skills.length > 0 ? reached.skills.join(', ') : '—', color: 'suggestion', bold: true },
+        ]
+
+        if (reached.spokes.length > 0) group.push({ text: ' › ', dim: true }, { text: reached.spokes.join(', '), color: 'merged' })
+        skills.push(group)
+      }
+
+      if (reached.agents.length > 0) skills.push([{ text: 'agent ', dim: true }, { text: reached.agents.join(', '), color: 'remember' }])
+      if (skills.length === 0) skills.push([{ text: 'no skill this turn', dim: true }])
+      if (plainBranch !== '') skills.push([{ text: plainBranch, color: 'suggestion' }])
+
+      return (
+        <Box flexDirection="column">
+          {live !== null && <Svg source={gaugeRow(shortModel(live.model), gauges)} alt={`${shortModel(live.model)} usage meters`} />}
+          {rows.length > 0 && <Svg source={barRows(rows)} alt="Evals and CI progress" />}
+          <Box>
+            <Text>
+              {joinGroups(skills).map((part, i) => (
+                <Text key={String(i)} color={part.color} dimColor={part.dim} weight={part.bold ? 'semibold' : undefined}>
+                  {part.text}
+                </Text>
+              ))}{' '}
+            </Text>
+            <Button key="refresh" label="↻" onPress={() => refreshNow($)} />
+          </Box>
+        </Box>
+      )
+    }
 
     // Line 1: the model, every usage percentage, then the skills and agents this turn reached for.
     const first: Part[][] = []
