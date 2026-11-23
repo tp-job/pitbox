@@ -36,7 +36,6 @@ export type UsedInfo = {
 }
 
 // The sidebar's values.
-export type Call = { id: string; tool: string; detail: string; isDone: boolean; isError: boolean }
 
 export type Snapshot = {
   model: string
@@ -79,7 +78,6 @@ declare module 'claude-code' {
       bandSession: SessionInfo | null
       bandCi: CiInfo | null
       bandUsed: UsedInfo
-      calls: Shaped<Call[]>
       snapshot: Shaped<Snapshot | null>
       used: Shaped<Used>
       phases: Shaped<Phase[] | null>

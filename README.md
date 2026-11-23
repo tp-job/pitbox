@@ -6,12 +6,13 @@ It has two parts.
 
 ## The band above the prompt
 
-Two lines, colored with your theme's own colors:
+In the desktop and mobile apps: ring gauges for context and usage (with the time to each reset), then dotted progress rows with a status pill for evals and CI. The terminal gets the same as plain colored text.
 
 | Line | Shows |
 | --- | --- |
 | 1 | Model · context, 5-hour and 7-day usage as percentages · the skills, hub specialists (`hub › spoke`) and subagents this turn used |
-| 2 | Git branch, ahead/behind, changed files · the latest GitHub Actions run on the branch · the latest plugin eval pass rate · ↻ refresh |
+| 2 | Git branch, ahead/behind, changed files · the latest GitHub Actions run on the branch · the latest plugin eval pass rate |
+| 3 | The skills, hub specialists and subagents this turn used · ↻ refresh · ⊙ commit · ⑂ pull request |
 
 - CI comes from `gh run list`, so it needs the GitHub CLI signed in, and is asked at most every 2 minutes.
 - Evals come from the newest `.json` in `evals/results/` (a `claude plugin eval --json` report). A project without that folder shows no evals.
@@ -21,8 +22,10 @@ Two lines, colored with your theme's own colors:
 
 Opens in the right-hand panel as a **Pitbox** tab (show the panel with **Ctrl+.**, or run `/pitbox`).
 
-- **Phases:** Cost, Tokens and Time tiles, a progress pill, then Running, Waiting and Finished phases, each with its branch, steps, pass criteria and a bar.
-- **Recent tool calls**, with ✓ done, ✗ failed and … running.
+- **Phases**, drawn like the band: Cost, Tokens and Time tiles, the whole plan as one bar with the current phase in its pill, then Running, Waiting and Finished phases, each with its branch, steps, pass criteria and a bar.
+
+⊙ and ⑂ in the band ask Claude to commit the changes or open a pull request, as if you had typed it; Claude still shows you what it does.
+
 
 Where the phases come from, first match wins:
 

@@ -12,6 +12,10 @@ const session = atom({ plugin: 'pitbox', key: 'bandSession' } as const, null)
 const NONE: UsedInfo = { skills: [], spokes: [], agents: [] }
 const used = atom({ plugin: 'pitbox', key: 'bandUsed' } as const, NONE)
 
+// What the commit and pull-request buttons send, as if the person typed it.
+const COMMIT_PROMPT = 'Commit the current changes.'
+const PR_PROMPT = 'Open a pull request for this branch.'
+
 const EVAL_DIR = 'evals/results'
 const REFRESH_MS = 30_000
 // `gh` goes over the network, so CI is asked at most this often.
@@ -324,6 +328,8 @@ export const register: Register = on => {
               ))}{' '}
             </Text>
             <Button key="refresh" label="↻" onPress={() => refreshNow($)} />
+            <Button key="commit" label="⊙" onPress={() => $.prompt.submit({ text: COMMIT_PROMPT, asUser: true })} />
+            <Button key="pr" label="⑂" onPress={() => $.prompt.submit({ text: PR_PROMPT, asUser: true })} />
           </Box>
         </Box>
       )
@@ -420,6 +426,8 @@ export const register: Register = on => {
           {line([...joinGroups(second), { text: ' ' }])}
           {/* An icon, not a word: ↻ is the refresh glyph. */}
           <Button key="refresh" label="↻" onPress={() => refreshNow($)} />
+          <Button key="commit" label="⊙" onPress={() => $.prompt.submit({ text: COMMIT_PROMPT, asUser: true })} />
+          <Button key="pr" label="⑂" onPress={() => $.prompt.submit({ text: PR_PROMPT, asUser: true })} />
         </Box>
       </Box>
     )

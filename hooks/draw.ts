@@ -216,3 +216,159 @@ export function timeLeft(iso: string | undefined, now: number): string {
 
   return `${minutes}m`
 }
+
+const SIDE = 600
+
+/** A row of stat tiles, such as Cost, Tokens and Time. */
+export function statTiles(tiles: { label: string; value: string }[]): string {
+  const gap = 12
+  const w = (SIDE - gap * (tiles.length - 1)) / tiles.length
+  const body = tiles.map((t, i) => {
+    const x = i * (w + gap)
+
+    return (
+      `<rect x="${x + 1}" y="1" width="${w - 2}" height="70" rx="12" fill="${INK.track}" stroke="#3a3f48"/>` +
+      `<text x="${x + 16}" y="28" font-size="15" fill="${INK.muted}">${esc(t.label)}</text>` +
+      `<text x="${x + 16}" y="56" font-size="21" font-weight="700" fill="${INK.text}">${esc(clip(t.value, 21, w - 28))}</text>`
+    )
+  })
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} 72" width="100%" font-family="${FONT}">${body.join('')}</svg>`
+}
+
+export type StackRow = BarRow & {
+  /** Under the name: a status word, then plain details. */
+  status?: { text: string; color: string }
+  details?: string
+  /** Short lines under the status, such as a phase's steps. */
+  lines?: string[]
+  /** A pass criterion, drawn last. */
+  criteria?: string
+}
+
+// One wrapped line per ~width, cut at spaces; Thai has none, so it is cut by length.
+function wrap(text: string, size: number, max: number, limit: number): string[] {
+  const out: string[] = []
+  let rest = text
+
+  while (rest !== '' && out.length < limit) {
+    if (textWidth(rest, size) <= max) {
+      out.push(rest)
+      break
+    }
+
+    let cut = rest.length
+
+    while (cut > 1 && textWidth(rest.slice(0, cut), size) > max) cut -= 1
+    const space = rest.lastIndexOf(' ', cut)
+    const at = space > cut * 0.5 ? space : cut
+    out.push(rest.slice(0, at).trimEnd())
+    rest = rest.slice(at).trimStart()
+  }
+
+  if (rest !== '' && out.length === limit && !out[limit - 1].endsWith(rest)) out[limit - 1] = clip(`${out[limit - 1]} ${rest}`, size, max)
+
+  return out
+}
+
+/** Rows stacked for a narrow pane: name, status, steps, then a full-width bar with its pill. */
+export function stackRows(rows: StackRow[]): string {
+  const body: string[] = []
+  const defs: string[] = []
+  let y = 4
+
+  for (const row of rows) {
+    const id = `s${(serial += 1)}`
+    const f = Math.max(0, Math.min(1, row.fraction))
+    const markColor = row.mark === 'bang' ? INK.red : row.mark === 'tick' ? INK.green : row.color
+    const top = y
+
+    // Name, with its mark.
+    if (row.mark === 'dot') body.push(`<circle cx="9" cy="${y + 13}" r="5" fill="${markColor}"/>`)
+    else if (row.mark === 'tick')
+      body.push(`<path d="M3 ${y + 13} l4.5 4.5 l8 -9" fill="none" stroke="${markColor}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`)
+    else body.push(`<text x="5" y="${y + 19}" font-size="18" font-weight="800" fill="${markColor}">!</text>`)
+
+    for (const line of wrap(row.label, 18, SIDE - 30, 2)) {
+      body.push(`<text x="26" y="${y + 19}" font-size="18" font-weight="700" fill="${INK.text}">${esc(line)}</text>`)
+      y += 24
+    }
+
+    if (row.status !== undefined || row.details !== undefined) {
+      const status = row.status === undefined ? '' : `<tspan fill="${row.status.color}" font-weight="600">${esc(row.status.text)}</tspan>`
+      const details = row.details === undefined ? '' : `<tspan dx="8" fill="${INK.muted}">${esc(clip(row.details, 15, SIDE - 140))}</tspan>`
+      body.push(`<text x="26" y="${y + 16}" font-size="15">${status}${details}</text>`)
+      y += 22
+    }
+
+    for (const line of (row.lines ?? []).slice(0, 4)) {
+      for (const part of wrap(line, 14, SIDE - 50, 2)) {
+        body.push(`<text x="40" y="${y + 15}" font-size="14" fill="${INK.muted}">${esc(part)}</text>`)
+        y += 19
+      }
+    }
+
+    if ((row.lines ?? []).length > 4) {
+      body.push(`<text x="40" y="${y + 15}" font-size="14" fill="${INK.faint}">+${(row.lines ?? []).length - 4} more</text>`)
+      y += 19
+    }
+
+    if (row.criteria !== undefined) {
+      const lines = wrap(row.criteria, 14, SIDE - 130, 2)
+      body.push(`<text x="40" y="${y + 15}" font-size="14" font-weight="600" fill="${INK.amber}">เกณฑ์ผ่าน</text>`)
+      lines.forEach((line, k) => {
+        body.push(`<text x="118" y="${y + 15 + k * 19}" font-size="14" fill="${INK.muted}">${esc(line)}</text>`)
+      })
+      y += 19 * lines.length
+    }
+
+    // The bar.
+    const bx0 = 26
+    const bx1 = SIDE - 70
+    const span = bx1 - bx0
+    const fillW = Math.max(f > 0 ? 24 : 0, span * f)
+    const by = y + 8
+
+    defs.push(
+      `<pattern id="${id}d" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="3.4" height="3.4" rx="0.6" fill="${row.color}"/></pattern>`,
+      `<linearGradient id="${id}g" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.22"/><stop offset="1" stop-color="#fff" stop-opacity="0.95"/></linearGradient>`,
+      `<mask id="${id}m"><rect x="${bx0}" y="${by}" width="${fillW}" height="22" fill="url(#${id}g)"/></mask>`,
+      `<clipPath id="${id}c"><rect x="${bx0}" y="${by}" width="${span}" height="22" rx="11"/></clipPath>`,
+    )
+    body.push(`<rect x="${bx0}" y="${by}" width="${span}" height="22" rx="11" fill="${INK.track}"/>`)
+    body.push(`<g clip-path="url(#${id}c)"><rect x="${bx0}" y="${by}" width="${fillW}" height="22" fill="url(#${id}d)" mask="url(#${id}m)"/></g>`)
+
+    for (let k = 1; k < row.parts; k += 1) {
+      const tx = bx0 + (span * k) / row.parts
+      const inside = tx < bx0 + fillW
+      body.push(`<line x1="${tx}" y1="${by + 5}" x2="${tx}" y2="${by + 17}" stroke="${inside ? '#ffffff' : INK.faint}" stroke-opacity="${inside ? 0.55 : 0.8}" stroke-width="${inside ? 2 : 1.5}"/>`)
+    }
+
+    const icon = row.pillIcon === undefined ? 0 : 18
+    const pillW = 22 + icon + textWidth(row.pillWord, 14, true) + (row.pillCount === '' ? 0 : 7 + textWidth(row.pillCount, 14))
+    const px = Math.max(bx0, Math.min(bx0 + fillW - pillW, bx1 - pillW))
+    const pmid = by + 11
+    body.push(`<rect x="${px}" y="${by - 2}" width="${pillW}" height="26" rx="13" fill="${row.color}"/>`)
+    let tx = px + 11
+
+    if (row.pillIcon === 'tick')
+      body.push(`<path d="M${tx} ${pmid} l3.5 3.5 l6.5 -7.5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`)
+    if (row.pillIcon === 'cross')
+      body.push(`<path d="M${tx + 1} ${pmid - 4.5} l8 8 M${tx + 9} ${pmid - 4.5} l-8 8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`)
+    tx += icon
+    body.push(
+      `<text x="${tx}" y="${pmid + 5}" font-size="14" fill="#fff"><tspan font-weight="700">${esc(row.pillWord)}</tspan>` +
+        (row.pillCount === '' ? '' : `<tspan dx="7" fill-opacity="0.85">${esc(row.pillCount)}</tspan>`) +
+        `</text>`,
+    )
+    body.push(`<text x="${SIDE - 4}" y="${pmid + 5}" font-size="15" text-anchor="end" fill="${INK.muted}">${esc(row.right ?? `${Math.round(f * 100)}%`)}</text>`)
+
+    y = by + 22 + 22
+    if (y - top < 10) y = top + 10
+  }
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} ${y}" width="100%" font-family="${FONT}">` +
+    `<defs>${defs.join('')}</defs>${body.join('')}</svg>`
+  )
+}
