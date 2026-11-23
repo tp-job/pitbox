@@ -16,6 +16,28 @@ const used = atom({ plugin: 'pitbox', key: 'bandUsed' } as const, NONE)
 const COMMIT_PROMPT = 'Commit the current changes.'
 const PR_PROMPT = 'Open a pull request for this branch.'
 
+// The macro buttons beside the band. Each has a one-letter shortcut (pressed while the band
+// has the keyboard: click the band, or ctrl+x tab), a hint shown while the pointer is over it,
+// and what a press does. `prompt` buttons send that text as if the person had typed it.
+type Macro = { id: string; label: string; key: string; hint: string; prompt?: string }
+
+const MACROS: Macro[] = [
+  { id: 'refresh', label: '↻', key: 'r', hint: 'Refresh the band' },
+  { id: 'commit', label: '⊙', key: 'c', hint: 'Commit the changes', prompt: COMMIT_PROMPT },
+  { id: 'pr', label: '⑂', key: 'p', hint: 'Open a pull request', prompt: PR_PROMPT },
+  // Pushing is outward-facing, so the message asks Claude to say what it will push and wait.
+  {
+    id: 'push',
+    label: '⇡',
+    key: 'u',
+    hint: 'Push this branch (asks first)',
+    prompt: 'Push the current branch. Say which commits go to which remote and branch, and wait for my yes before pushing.',
+  },
+  { id: 'test', label: '✓', key: 't', hint: 'Run the tests', prompt: 'Run the tests and report what fails.' },
+  { id: 'next', label: '▶', key: 'n', hint: 'Continue with the next step', prompt: 'Continue with the next step of the plan.' },
+  { id: 'review', label: '⌕', key: 'v', hint: 'Review my uncommitted changes', prompt: 'Review my uncommitted changes for bugs.' },
+]
+
 const EVAL_DIR = 'evals/results'
 const REFRESH_MS = 30_000
 // `gh` goes over the network, so CI is asked at most this often.
@@ -210,6 +232,35 @@ export async function bandComplete($: EngineInterface): Promise<void> {
   await refresh($)
 }
 
+
+// The macro buttons with their hover hints. A hint is a hidden Box that joins its button's
+// hover group, so the surface reveals it while the pointer is over the button: no hook runs.
+function macroRow(
+  $: EngineInterface,
+  ui: { Box: any; Button: any; Text: any },
+): JSX.Element {
+  const { Box, Button, Text } = ui
+
+  return (
+    <Box>
+      {MACROS.map(macro => (
+        <Button
+          key={macro.id}
+          label={macro.label}
+          hotkey={macro.key}
+          hover={{ scope: `pb-${macro.id}` }}
+          onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
+        />
+      ))}
+      {MACROS.map(macro => (
+        <Box key={`hint-${macro.id}`} display="none" hover={{ scope: `pb-${macro.id}`, display: 'flex' }}>
+          <Text dimColor>{`  ${macro.hint} · ${macro.key}`}</Text>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 export const register: Register = on => {
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     await update($, used, u => ({ ...u, skills: addOnce(u.skills, e.skill.replace(/^[\w-]+:/, '')) }))
@@ -343,9 +394,7 @@ export const register: Register = on => {
                 </Text>
               ))}{' '}
             </Text>
-            <Button key="refresh" label="↻" onPress={() => refreshNow($)} />
-            <Button key="commit" label="⊙" onPress={() => $.prompt.submit({ text: COMMIT_PROMPT, asUser: true })} />
-            <Button key="pr" label="⑂" onPress={() => $.prompt.submit({ text: PR_PROMPT, asUser: true })} />
+            {macroRow($, { Box, Button, Text })}
           </Box>
         </Box>
       )
@@ -441,9 +490,7 @@ export const register: Register = on => {
         <Box>
           {line([...joinGroups(second), { text: ' ' }])}
           {/* An icon, not a word: ↻ is the refresh glyph. */}
-          <Button key="refresh" label="↻" onPress={() => refreshNow($)} />
-          <Button key="commit" label="⊙" onPress={() => $.prompt.submit({ text: COMMIT_PROMPT, asUser: true })} />
-          <Button key="pr" label="⑂" onPress={() => $.prompt.submit({ text: PR_PROMPT, asUser: true })} />
+          {macroRow($, { Box, Button, Text })}
         </Box>
       </Box>
     )

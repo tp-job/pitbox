@@ -12,11 +12,27 @@ In the desktop and mobile apps: ring gauges for context and usage (with the time
 | --- | --- |
 | 1 | Model · context, 5-hour and 7-day usage as percentages · the skills, hub specialists (`hub › spoke`) and subagents this turn used |
 | 2 | Git branch, ahead/behind, changed files · the latest GitHub Actions run on the branch · the latest plugin eval pass rate |
-| 3 | The skills, hub specialists and subagents this turn used · ↻ refresh · ⊙ commit · ⑂ pull request |
+| 3 | The skills, hub specialists and subagents this turn used · the macro buttons below |
 
 - CI comes from `gh run list`, so it needs the GitHub CLI signed in, and is asked at most every 2 minutes.
 - Evals come from the newest `.json` in `evals/results/` (a `claude plugin eval --json` report). A project without that folder shows no evals.
 - The rest refreshes every 30 seconds and when a turn ends.
+
+### Macro buttons
+
+Each button sends a message as if you had typed it, shows a hint while the pointer is over it, and has a one-letter shortcut that works while the band holds the keyboard (click the band, or ctrl+x then tab).
+
+| Button | Key | Sends |
+| --- | --- | --- |
+| ↻ | `r` | refreshes the band |
+| ⊙ | `c` | Commit the current changes. |
+| ⑂ | `p` | Open a pull request for this branch. |
+| ⇡ | `u` | Push the current branch, naming what goes where and waiting for your yes |
+| ✓ | `t` | Run the tests and report what fails. |
+| ▶ | `n` | Continue with the next step of the plan. |
+| ⌕ | `v` | Review my uncommitted changes for bugs. |
+
+The list is `MACROS` in `hooks/band.tsx`: change a message or key there.
 
 ## The sidebar
 
