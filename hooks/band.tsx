@@ -136,29 +136,36 @@ async function refresh($: EngineInterface): Promise<void> {
 
   try {
     const entries = await $.fs.list(`${cwd}/${EVAL_DIR}`)
-    const newest = entries
+    const reports = entries
       .filter(entry => entry.kind === 'file' && entry.name.endsWith('.json'))
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)[0]
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    let found: EvalInfo | null = null
 
-    if (newest === undefined) {
-      await update($, evals, () => null)
-    } else {
-      const report = JSON.parse(await $.fs.read(`${cwd}/${EVAL_DIR}/${newest.name}`)) as {
-        cases?: { arms?: { with?: { passed?: boolean }[] } }[]
+    // The newest report that ran: one cut short (`partial`) or whose every run errored
+    // (the CLI signed out, say) measured nothing, so the one before it stands.
+    for (const entry of reports.slice(0, 10)) {
+      const report = JSON.parse(await $.fs.read(`${cwd}/${EVAL_DIR}/${entry.name}`)) as {
+        partial?: boolean
+        cases?: { arms?: { with?: { passed?: boolean; error?: unknown }[] } }[]
       }
       let passed = 0
       let total = 0
+      let errored = 0
 
       for (const testCase of report.cases ?? []) {
         for (const run of testCase.arms?.with ?? []) {
           total += 1
           passed += run.passed === true ? 1 : 0
+          errored += run.error !== null && run.error !== undefined ? 1 : 0
         }
       }
 
-      const found: EvalInfo | null = total > 0 ? { passed, total, file: newest.name } : null
-      await update($, evals, () => found)
+      if (report.partial === true || total === 0 || errored === total) continue
+      found = { passed, total, file: entry.name }
+      break
     }
+
+    await update($, evals, () => found)
   } catch {
     await update($, evals, () => null)
   }
@@ -275,6 +282,22 @@ export const register: Register = on => {
           color: pct >= 85 ? INK.green : pct >= 60 ? INK.purple : INK.red,
           parts: 4,
         })
+      } else if (info !== null) {
+        // No eval report in this project: the branch still gets its own row, a status bar
+        // like CI's — green and full when clean, amber when files changed.
+        const sync = [info.ahead > 0 ? `↑${info.ahead}` : '', info.behind > 0 ? `↓${info.behind}` : ''].filter(Boolean).join(' ')
+        const isClean = info.changed + info.untracked === 0
+        rows.push({
+          label: info.branch,
+          mark: isClean ? 'tick' : 'dot',
+          fraction: 1,
+          pillWord: isClean ? 'Clean' : `${info.changed} changed`,
+          pillCount: isClean || info.untracked === 0 ? '' : `+${info.untracked} new`,
+          pillIcon: isClean ? 'tick' : undefined,
+          color: isClean ? INK.green : INK.amber,
+          parts: 1,
+          right: sync === '' ? 'in sync' : sync,
+        })
       }
 
       if (build !== null) {
@@ -293,12 +316,6 @@ export const register: Register = on => {
         })
       }
 
-      // The branch alone, when there is no eval report to draw it beside.
-      const plainBranch =
-        info !== null && result === null
-          ? `⎇ ${info.branch} · ${info.changed + info.untracked === 0 ? 'clean' : `${info.changed} changed, ${info.untracked} untracked`}`
-          : ''
-
       const skills: Part[][] = []
 
       if (reached.skills.length > 0 || reached.spokes.length > 0) {
@@ -313,7 +330,6 @@ export const register: Register = on => {
 
       if (reached.agents.length > 0) skills.push([{ text: 'agent ', dim: true }, { text: reached.agents.join(', '), color: 'remember' }])
       if (skills.length === 0) skills.push([{ text: 'no skill this turn', dim: true }])
-      if (plainBranch !== '') skills.push([{ text: plainBranch, color: 'suggestion' }])
 
       return (
         <Box flexDirection="column">
