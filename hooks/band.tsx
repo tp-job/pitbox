@@ -19,23 +19,33 @@ const PR_PROMPT = 'Open a pull request for this branch.'
 // The macro buttons beside the band. Each has a one-letter shortcut (pressed while the band
 // has the keyboard: click the band, or ctrl+x tab), a hint shown while the pointer is over it,
 // and what a press does. `prompt` buttons send that text as if the person had typed it.
-type Macro = { id: string; label: string; key: string; hint: string; prompt?: string }
+type Macro = {
+  id: string
+  label: string
+  key: string
+  /** What the button is called. */
+  name: string
+  /** What a press does, in a sentence. */
+  does: string
+  prompt?: string
+}
 
 const MACROS: Macro[] = [
-  { id: 'refresh', label: '↻', key: 'r', hint: 'Refresh the band' },
-  { id: 'commit', label: '⊙', key: 'c', hint: 'Commit the changes', prompt: COMMIT_PROMPT },
-  { id: 'pr', label: '⑂', key: 'p', hint: 'Open a pull request', prompt: PR_PROMPT },
+  { id: 'refresh', label: '↻', key: 'r', name: 'Refresh', does: 'reload git status, CI, eval results and usage now' },
+  { id: 'commit', label: '⊙', key: 'c', name: 'Commit', does: 'ask Claude to commit your current changes', prompt: COMMIT_PROMPT },
+  { id: 'pr', label: '⑂', key: 'p', name: 'Pull request', does: 'ask Claude to open a pull request for this branch', prompt: PR_PROMPT },
   // Pushing is outward-facing, so the message asks Claude to say what it will push and wait.
   {
     id: 'push',
     label: '⇡',
     key: 'u',
-    hint: 'Push this branch (asks first)',
+    name: 'Push',
+    does: 'ask Claude to push this branch; it tells you what goes where and waits for your yes',
     prompt: 'Push the current branch. Say which commits go to which remote and branch, and wait for my yes before pushing.',
   },
-  { id: 'test', label: '✓', key: 't', hint: 'Run the tests', prompt: 'Run the tests and report what fails.' },
-  { id: 'next', label: '▶', key: 'n', hint: 'Continue with the next step', prompt: 'Continue with the next step of the plan.' },
-  { id: 'review', label: '⌕', key: 'v', hint: 'Review my uncommitted changes', prompt: 'Review my uncommitted changes for bugs.' },
+  { id: 'test', label: '✓', key: 't', name: 'Run tests', does: 'ask Claude to run the tests and report what fails', prompt: 'Run the tests and report what fails.' },
+  { id: 'next', label: '▶', key: 'n', name: 'Continue', does: 'ask Claude to carry on with the next step of the plan', prompt: 'Continue with the next step of the plan.' },
+  { id: 'review', label: '⌕', key: 'v', name: 'Review', does: 'ask Claude to review your uncommitted changes for bugs', prompt: 'Review my uncommitted changes for bugs.' },
 ]
 
 const EVAL_DIR = 'evals/results'
@@ -242,19 +252,25 @@ function macroRow(
   const { Box, Button, Text } = ui
 
   return (
-    <Box>
-      {MACROS.map(macro => (
-        <Button
-          key={macro.id}
-          label={macro.label}
-          hotkey={macro.key}
-          hover={{ scope: `pb-${macro.id}` }}
-          onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
-        />
-      ))}
+    <Box flexDirection="column">
+      <Box>
+        {MACROS.map(macro => (
+          <Button
+            key={macro.id}
+            label={macro.label}
+            hotkey={macro.key}
+            hover={{ scope: `pb-${macro.id}` }}
+            onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
+          />
+        ))}
+      </Box>
       {MACROS.map(macro => (
         <Box key={`hint-${macro.id}`} display="none" hover={{ scope: `pb-${macro.id}`, display: 'flex' }}>
-          <Text dimColor>{`  ${macro.hint} · ${macro.key}`}</Text>
+          <Text>
+            <Text color="suggestion" weight="semibold">{`${macro.label} ${macro.name}`}</Text>
+            <Text dimColor>{` · ${macro.does} · key `}</Text>
+            <Text color="warning" weight="semibold">{macro.key}</Text>
+          </Text>
         </Box>
       ))}
     </Box>

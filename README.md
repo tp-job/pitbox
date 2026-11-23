@@ -20,7 +20,7 @@ In the desktop and mobile apps: ring gauges for context and usage (with the time
 
 ### Macro buttons
 
-Each button sends a message as if you had typed it, shows a hint while the pointer is over it, and has a one-letter shortcut that works while the band holds the keyboard (click the band, or ctrl+x then tab).
+Each button sends a message as if you had typed it, shows a line under the buttons while the pointer is over it (what the button is, what a press does, its key), and has a one-letter shortcut that works while the band holds the keyboard (click the band, or ctrl+x then tab).
 
 | Button | Key | Sends |
 | --- | --- | --- |
