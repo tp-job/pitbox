@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
-import { INK, stackRows, statTiles } from './draw'
-import type { BarRow, StackRow } from './draw'
-import type { Phase, Plan, Snapshot, Used } from '../types'
+import { branchRows, INK, stackRows, statTiles } from './draw'
+import type { BarRow, BranchRow, StackRow } from './draw'
+import type { BranchInfo, Branches, Phase, Plan, Snapshot, Used } from '../types'
 
 const PANE = 'pitbox'
 const TITLE = 'Pitbox'
@@ -220,6 +220,7 @@ async function refresh($: EngineInterface): Promise<void> {
   try {
     const cwd = await $.session.cwd()
     await refreshPhases($, cwd)
+    await refreshBranches($, cwd)
     const usage = await $.session.usage()
     const model = await $.session.model()
     const next: Snapshot = {
@@ -258,6 +259,123 @@ async function refresh($: EngineInterface): Promise<void> {
   } catch {
     await update($, snapshot, () => null)
   }
+}
+
+// Every local branch of the session's project, with its sync state, whether the default
+// branch already holds it, and its pull request. git runs on every refresh; gh goes over the
+// network, so pull requests are asked at most every two minutes.
+const branches = atom({ plugin: 'pitbox', key: 'branches' } as const, null, { shape: 'branches-1' })
+const PR_EVERY_MS = 120_000
+let prCheckedAt = 0
+let prCwd = ''
+let prByBranch = new Map<string, { number: number; state: string; isDraft: boolean }>()
+
+async function git($: EngineInterface, cwd: string, args: string[]): Promise<string | null> {
+  try {
+    const ran = await $.process.run(['git', ...args], { cwd })
+
+    return ran.exitCode === 0 ? ran.stdout : null
+  } catch {
+    return null
+  }
+}
+
+async function refreshBranches($: EngineInterface, cwd: string): Promise<void> {
+  const refs = await git($, cwd, [
+    'for-each-ref',
+    '--format=%(refname:short)%09%(upstream:short)%09%(upstream:track)%09%(committerdate:unix)%09%(HEAD)%09%(subject)',
+    'refs/heads',
+  ])
+
+  if (refs === null) {
+    await update($, branches, () => null)
+    return
+  }
+
+  const head = (await git($, cwd, ['symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD']))?.trim() ?? ''
+  const defaultBranch = head.replace(/^origin\//, '') || 'main'
+  const merged = new Set(
+    ((await git($, cwd, ['branch', '--merged', defaultBranch, '--format=%(refname:short)'])) ?? '')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean),
+  )
+
+  const now = await $.clock.now()
+
+  if (cwd !== prCwd || now - prCheckedAt > PR_EVERY_MS) {
+    prCwd = cwd
+    prCheckedAt = now
+
+    try {
+      const ran = await $.process.run(
+        ['gh', 'pr', 'list', '--state', 'all', '--limit', '60', '--json', 'headRefName,number,state,isDraft'],
+        { cwd },
+      )
+      const prs = ran.exitCode === 0 ? (JSON.parse(ran.stdout) as { headRefName: string; number: number; state: string; isDraft: boolean }[]) : []
+      prByBranch = new Map()
+
+      // gh lists newest first: keep the newest PR for each branch.
+      for (const pr of prs) {
+        if (!prByBranch.has(pr.headRefName)) prByBranch.set(pr.headRefName, { number: pr.number, state: pr.state, isDraft: pr.isDraft })
+      }
+    } catch {
+      prByBranch = new Map()
+    }
+  }
+
+  const list: BranchInfo[] = refs
+    .split('\n')
+    .filter(line => line.trim() !== '')
+    .map(line => {
+      const [name, upstream, track, date, headMark, ...subject] = line.split('\t')
+      const ahead = /ahead (\d+)/.exec(track ?? '')
+      const behind = /behind (\d+)/.exec(track ?? '')
+
+      return {
+        name,
+        isCurrent: headMark === '*',
+        upstream: upstream ?? '',
+        ahead: ahead === null ? 0 : Number(ahead[1]),
+        behind: behind === null ? 0 : Number(behind[1]),
+        isGone: (track ?? '').includes('gone'),
+        isMerged: name !== defaultBranch && merged.has(name),
+        committedAt: Number(date) || 0,
+        subject: subject.join('\t'),
+        pr: prByBranch.get(name) ?? null,
+      }
+    })
+    // The current branch, then the default, then the rest by their last commit.
+    .sort((a, b) =>
+      a.isCurrent !== b.isCurrent
+        ? (a.isCurrent ? -1 : 1)
+        : (a.name === defaultBranch) !== (b.name === defaultBranch)
+          ? (a.name === defaultBranch ? -1 : 1)
+          : b.committedAt - a.committedAt,
+    )
+
+  await update($, branches, () => ({ defaultBranch, list }))
+}
+
+// What a branch row says: sync with its remote, merged or not, its pull request.
+function branchChips(b: BranchInfo, defaultBranch: string): BranchRow['chips'] {
+  const chips: BranchRow['chips'] = []
+
+  if (b.name === defaultBranch) chips.push({ text: 'default', color: INK.blue })
+  if (b.upstream === '') chips.push({ text: 'local only', color: INK.faint })
+  else if (b.isGone) chips.push({ text: 'remote deleted', color: INK.red })
+  else if (b.ahead === 0 && b.behind === 0) chips.push({ text: 'in sync', color: INK.green })
+  if (b.ahead > 0) chips.push({ text: `↑${b.ahead} to push`, color: INK.purple })
+  if (b.behind > 0) chips.push({ text: `↓${b.behind} to pull`, color: INK.amber })
+  if (b.isMerged) chips.push({ text: 'merged', color: INK.green })
+
+  if (b.pr !== null) {
+    const state = b.pr.isDraft && b.pr.state === 'OPEN' ? 'draft' : b.pr.state.toLowerCase()
+    const color = state === 'open' ? INK.green : state === 'merged' ? INK.purple : state === 'draft' ? INK.faint : INK.red
+    chips.push({ text: `PR #${b.pr.number} ${state}`, color })
+  }
+
+  return chips
 }
 
 // The plan the sidebar and the band both draw: a phase plan Claude wrote, else its task list,
@@ -371,11 +489,36 @@ export const register: Register = on => {
     const reached = await read($, used)
     const now = await $.clock.now()
     const { items, source, live } = await currentPlan($)
+    const branchData = await read($, branches)
+    const shown = (branchData?.list ?? []).slice(0, 12)
+    const branchSection =
+      branchData === null || shown.length === 0 ? null : (
+        <Box key="branches" flexDirection="column">
+          <Text dimColor>
+            Branches · {branchData.list.length}
+            {branchData.list.length > shown.length ? ` (newest ${shown.length})` : ''}
+          </Text>
+          <Svg
+            source={branchRows(
+              shown.map(b => ({
+                name: b.name,
+                isCurrent: b.isCurrent,
+                committedAt: b.committedAt,
+                subject: b.subject,
+                chips: branchChips(b, branchData.defaultBranch),
+              })),
+              now,
+            )}
+            alt={`Branches: ${shown.map(b => b.name).join(', ')}`}
+          />
+        </Box>
+      )
 
     if (items === null) {
       return (
         <Box flexDirection="column">
           <Text dimColor>No plan yet. Pitbox shows the phases Claude writes, its task list, or .claude/phases.json.</Text>
+          {branchSection}
         </Box>
       )
     }
@@ -438,6 +581,7 @@ export const register: Register = on => {
         {section('Running', doing)}
         {section('Waiting', waiting)}
         {section('Finished', done)}
+        {branchSection}
       </Box>
     )
   })

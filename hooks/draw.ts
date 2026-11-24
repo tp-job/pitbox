@@ -372,3 +372,68 @@ export function stackRows(rows: StackRow[]): string {
     `<defs>${defs.join('')}</defs>${body.join('')}</svg>`
   )
 }
+
+export type BranchRow = {
+  name: string
+  isCurrent: boolean
+  /** Unix seconds of the branch's last commit. */
+  committedAt: number
+  subject: string
+  /** Short chips after the name, each with its own color. */
+  chips: { text: string; color: string }[]
+}
+
+function ago(seconds: number, nowMs: number): string {
+  const s = Math.max(0, Math.floor(nowMs / 1000 - seconds))
+
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  if (s < 86400 * 60) return `${Math.floor(s / 86400)}d`
+
+  return `${Math.floor(s / (86400 * 30))}mo`
+}
+
+/** The branch list: name and age, the last commit's subject, then status chips. */
+export function branchRows(rows: BranchRow[], nowMs: number): string {
+  const body: string[] = []
+  const rowH = 62
+  let y = 0
+
+  for (const row of rows) {
+    const mid = y + 18
+
+    if (row.isCurrent) body.push(`<rect x="0" y="${y + 2}" width="${SIDE}" height="${rowH - 6}" rx="10" fill="${INK.track}"/>`)
+    body.push(
+      row.isCurrent
+        ? `<circle cx="14" cy="${mid}" r="5" fill="${INK.purple}"/>`
+        : `<circle cx="14" cy="${mid}" r="4.5" fill="none" stroke="${INK.faint}" stroke-width="1.6"/>`,
+    )
+
+    const age = ago(row.committedAt, nowMs)
+    body.push(
+      `<text x="30" y="${mid + 6}" font-size="17" font-weight="700" fill="${row.isCurrent ? INK.text : '#c9ced8'}">${esc(clip(row.name, 17, SIDE - 110))}</text>`,
+      `<text x="${SIDE - 10}" y="${mid + 6}" font-size="14" text-anchor="end" fill="${INK.muted}">${esc(age)}</text>`,
+    )
+
+    // Chips first, then the commit subject in what room is left.
+    let x = 30
+    const cy = y + 32
+
+    for (const chip of row.chips) {
+      const w = textWidth(chip.text, 12.5, true) + 16
+      body.push(
+        `<rect x="${x}" y="${cy}" width="${w}" height="20" rx="10" fill="${chip.color}" fill-opacity="0.18" stroke="${chip.color}" stroke-opacity="0.55"/>`,
+        `<text x="${x + 8}" y="${cy + 14}" font-size="12.5" font-weight="700" fill="${chip.color}">${esc(chip.text)}</text>`,
+      )
+      x += w + 6
+    }
+
+    if (row.subject !== '' && SIDE - x - 14 > 60) {
+      body.push(`<text x="${x + 4}" y="${cy + 14}" font-size="13" fill="${INK.faint}">${esc(clip(row.subject, 13, SIDE - x - 18))}</text>`)
+    }
+
+    y += rowH
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} ${Math.max(y, 10)}" width="100%" font-family="${FONT}">${body.join('')}</svg>`
+}

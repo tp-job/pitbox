@@ -43,6 +43,8 @@ Opens in the right-hand panel as a **Pitbox** tab (show the panel with **Ctrl+.*
 ⊙ and ⑂ in the band ask Claude to commit the changes or open a pull request, as if you had typed it; Claude still shows you what it does.
 
 
+- **Branches** of the project the session is open in: the current branch first, then the default, then the rest by last commit (up to 12). Each shows its last commit's age and subject and chips for its state: `default`, `in sync`, `↑n to push`, `↓n to pull`, `local only`, `remote deleted`, `merged`, and its pull request (`PR #n open`, `draft`, `merged`, `closed`). Sync is against the last fetch (Pitbox never fetches); pull requests come from `gh`, at most every 2 minutes.
+
 Where the phases come from, first match wins:
 
 1. **A plan Claude writes**, in a reply or a plan file under `plans/`: two or more headings such as `Phase 1: Fix the client hooks (`refactor/client-hooks`) — small, low risk`, with bullets under each, and a `เกณฑ์ผ่าน:` or `Exit criteria:` bullet. `ระยะ`, `เฟส` and `Stage` work too.

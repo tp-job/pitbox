@@ -65,6 +65,24 @@ export type Phase = {
   criteria?: string
 }
 
+/** One local branch: where it stands against its upstream and the default branch, and its PR. */
+export type BranchInfo = {
+  name: string
+  isCurrent: boolean
+  upstream: string
+  ahead: number
+  behind: number
+  /** The upstream branch was deleted on the remote. */
+  isGone: boolean
+  /** Already merged into the default branch. */
+  isMerged: boolean
+  committedAt: number
+  subject: string
+  pr: { number: number; state: string; isDraft: boolean } | null
+}
+
+export type Branches = { defaultBranch: string; list: BranchInfo[] }
+
 /** The plan Claude is working through, kept from its own task-list calls (or read from a file). */
 export type Plan = { items: Phase[]; startedAt: number | null }
 
@@ -83,6 +101,7 @@ declare module 'claude-code' {
       phases: Shaped<Phase[] | null>
       plan: Shaped<Plan | null>
       written: Shaped<Phase[] | null>
+      branches: Shaped<Branches | null>
     }
   }
 }
