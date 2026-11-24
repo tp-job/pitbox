@@ -7,7 +7,7 @@
       "name": "pitbox",
       "source": "./",
       "description": "A band above the prompt (model, usage, skills, git, CI, evals) and a sidebar with Claude's phase plan and recent tool calls.",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "license": "MIT",
       "keywords": ["mod", "status", "sidebar", "phases", "git", "ci", "evals", "usage"]
     }

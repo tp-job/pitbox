@@ -17,7 +17,7 @@ export const INK = {
 
 const FONT = "Inter, 'Segoe UI', system-ui, sans-serif"
 // The band is about 850-950 px wide; the sidebar pane about 400.
-const WIDTH = 860
+const WIDTH = 1100
 
 function esc(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -66,8 +66,8 @@ let serial = 0
 export function barRows(rows: BarRow[]): string {
   const rowH = 50
   const height = rows.length * rowH + 8
-  const x0 = 250
-  const x1 = WIDTH - 120
+  const x0 = 300
+  const x1 = WIDTH - 150
   const span = x1 - x0
   const body: string[] = []
   const defs: string[] = []
