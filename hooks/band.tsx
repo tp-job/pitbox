@@ -3,6 +3,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 
 import { barRows, gaugeRow, INK, timeLeft } from './draw'
 import type { BarRow, Gauge } from './draw'
+import { currentPlan, overallRow } from './sidebar'
 import type { CiInfo, EvalInfo, RepoInfo, SessionInfo, UsedInfo } from '../types'
 
 const repo = atom({ plugin: 'pitbox', key: 'bandRepo' } as const, null)
@@ -21,6 +22,8 @@ const PR_PROMPT = 'Open a pull request for this branch.'
 // and what a press does. `prompt` buttons send that text as if the person had typed it.
 type Macro = {
   id: string
+  /** Buttons of one group sit together; a divider separates groups. */
+  group: 'band' | 'git' | 'work'
   label: string
   key: string
   /** What the button is called. */
@@ -31,21 +34,21 @@ type Macro = {
 }
 
 const MACROS: Macro[] = [
-  { id: 'refresh', label: '↻', key: 'r', name: 'Refresh', does: 'reload git status, CI, eval results and usage now' },
-  { id: 'commit', label: '⊙', key: 'c', name: 'Commit', does: 'ask Claude to commit your current changes', prompt: COMMIT_PROMPT },
-  { id: 'pr', label: '⑂', key: 'p', name: 'Pull request', does: 'ask Claude to open a pull request for this branch', prompt: PR_PROMPT },
+  { id: 'refresh', group: 'band', label: '↻', key: 'r', name: 'Refresh', does: 'reload git status, CI, eval results and usage now' },
+  { id: 'commit', group: 'git', label: '⊙', key: 'c', name: 'Commit', does: 'ask Claude to commit your current changes', prompt: COMMIT_PROMPT },
+  { id: 'pr', group: 'git', label: '⑂', key: 'p', name: 'Pull request', does: 'ask Claude to open a pull request for this branch', prompt: PR_PROMPT },
   // Pushing is outward-facing, so the message asks Claude to say what it will push and wait.
   {
-    id: 'push',
+    id: 'push', group: 'git',
     label: '⇡',
     key: 'u',
     name: 'Push',
     does: 'ask Claude to push this branch; it tells you what goes where and waits for your yes',
     prompt: 'Push the current branch. Say which commits go to which remote and branch, and wait for my yes before pushing.',
   },
-  { id: 'test', label: '✓', key: 't', name: 'Run tests', does: 'ask Claude to run the tests and report what fails', prompt: 'Run the tests and report what fails.' },
-  { id: 'next', label: '▶', key: 'n', name: 'Continue', does: 'ask Claude to carry on with the next step of the plan', prompt: 'Continue with the next step of the plan.' },
-  { id: 'review', label: '⌕', key: 'v', name: 'Review', does: 'ask Claude to review your uncommitted changes for bugs', prompt: 'Review my uncommitted changes for bugs.' },
+  { id: 'test', group: 'work', label: '✓', key: 't', name: 'Run tests', does: 'ask Claude to run the tests and report what fails', prompt: 'Run the tests and report what fails.' },
+  { id: 'next', group: 'work', label: '▶', key: 'n', name: 'Continue', does: 'ask Claude to carry on with the next step of the plan', prompt: 'Continue with the next step of the plan.' },
+  { id: 'review', group: 'work', label: '⌕', key: 'v', name: 'Review', does: 'ask Claude to review your uncommitted changes for bugs', prompt: 'Review my uncommitted changes for bugs.' },
 ]
 
 const EVAL_DIR = 'evals/results'
@@ -248,22 +251,32 @@ export async function bandComplete($: EngineInterface): Promise<void> {
 function macroRow(
   $: EngineInterface,
   ui: { Box: any; Button: any; Text: any },
-): JSX.Element {
+): { buttons: JSX.Element; hints: JSX.Element } {
   const { Box, Button, Text } = ui
+  const groups = (['band', 'git', 'work'] as const).map(group => MACROS.filter(macro => macro.group === group))
 
-  return (
+  const buttons = (
+    <Box>
+      {groups.map((group, i) => (
+        <Box key={`group-${i}`}>
+          {i > 0 && <Text dimColor>{' │ '}</Text>}
+          {group.map(macro => (
+            <Button
+              key={macro.id}
+              label={macro.label}
+              hotkey={macro.key}
+              hover={{ scope: `pb-${macro.id}` }}
+              onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
+            />
+          ))}
+        </Box>
+      ))}
+    </Box>
+  )
+
+  // Hidden until the pointer is over a button of the same scope.
+  const hints = (
     <Box flexDirection="column">
-      <Box>
-        {MACROS.map(macro => (
-          <Button
-            key={macro.id}
-            label={macro.label}
-            hotkey={macro.key}
-            hover={{ scope: `pb-${macro.id}` }}
-            onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
-          />
-        ))}
-      </Box>
       {MACROS.map(macro => (
         <Box key={`hint-${macro.id}`} display="none" hover={{ scope: `pb-${macro.id}`, display: 'flex' }}>
           <Text>
@@ -275,6 +288,8 @@ function macroRow(
       ))}
     </Box>
   )
+
+  return { buttons, hints }
 }
 
 export const register: Register = on => {
@@ -312,6 +327,7 @@ export const register: Register = on => {
     }
 
     const { Box, Button, Svg, Text } = $.ui.resolve(e)
+    const macros = macroRow($, { Box, Button, Text })
 
     // The desktop and mobile apps draw SVG: ring gauges and progress rows, as in a mission board.
     if (e.surface === 'desktop' || e.surface === 'mobile') {
@@ -383,6 +399,11 @@ export const register: Register = on => {
         })
       }
 
+      // Under CI: the plan as one bar, as in the sidebar (the phase list stays there).
+      const wholePlan = await currentPlan($)
+
+      if (wholePlan.items !== null) rows.push(overallRow(wholePlan.items, wholePlan.project))
+
       const skills: Part[][] = []
 
       if (reached.skills.length > 0 || reached.spokes.length > 0) {
@@ -402,19 +423,23 @@ export const register: Register = on => {
         <Box flexDirection="column">
           {live !== null && <Svg source={gaugeRow(shortModel(live.model), gauges)} alt={`${shortModel(live.model)} usage meters`} />}
           {rows.length > 0 && <Svg source={barRows(rows)} alt="Evals and CI progress" />}
-          <Box>
+          <Box justifyContent="space-between">
             <Text>
               {joinGroups(skills).map((part, i) => (
                 <Text key={String(i)} color={part.color} dimColor={part.dim} weight={part.bold ? 'semibold' : undefined}>
                   {part.text}
                 </Text>
-              ))}{' '}
+              ))}
             </Text>
-            {macroRow($, { Box, Button, Text })}
+            {macros.buttons}
           </Box>
+          {macros.hints}
         </Box>
       )
     }
+
+    const textPlan = await currentPlan($)
+    const planDone = textPlan.items === null ? 0 : textPlan.items.filter(p => p.status === 'done').length
 
     // Line 1: the model, every usage percentage, then the skills and agents this turn reached for.
     const first: Part[][] = []
@@ -490,6 +515,14 @@ export const register: Register = on => {
       ])
     }
 
+    if (textPlan.items !== null) {
+      const pct = Math.round((planDone / textPlan.items.length) * 100)
+      second.push([
+        { text: 'plan ', dim: true },
+        { text: `${planDone}/${textPlan.items.length} (${pct}%)`, color: level(pct, 80, 40) },
+      ])
+    }
+
     const line = (parts: Part[]) => (
       <Text>
         {parts.map((part, i) => (
@@ -503,11 +536,11 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {line(joinGroups(first))}
-        <Box>
-          {line([...joinGroups(second), { text: ' ' }])}
-          {/* An icon, not a word: ↻ is the refresh glyph. */}
-          {macroRow($, { Box, Button, Text })}
+        <Box justifyContent="space-between">
+          {line(joinGroups(second))}
+          {macros.buttons}
         </Box>
+        {macros.hints}
       </Box>
     )
   })

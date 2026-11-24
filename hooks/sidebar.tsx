@@ -260,6 +260,46 @@ async function refresh($: EngineInterface): Promise<void> {
   }
 }
 
+// The plan the sidebar and the band both draw: a phase plan Claude wrote, else its task list,
+// else the project's phases file.
+export async function currentPlan($: EngineInterface): Promise<{
+  items: Phase[] | null
+  source: string
+  live: Plan | null
+  project: string
+}> {
+  const snap = await read($, snapshot)
+  const fromFile = await read($, phases)
+  const live = await read($, plan)
+  const plotted = await read($, written)
+  const isLive = live !== null && live.items.length > 0
+  const source = plotted !== null ? "Claude's plan" : isLive ? 'task list' : '.claude/phases.json'
+  const items: Phase[] | null =
+    plotted !== null ? withStatus(plotted, snap?.branch ?? '', live) : isLive ? live.items : fromFile
+
+  return { items, source, live: isLive ? live : null, project: snap?.project ? snap.project : 'Plan' }
+}
+
+// The plan as a whole: one bar, its pill naming the phase under way.
+export function overallRow(items: Phase[], project: string): BarRow {
+  const done = items.filter(p => p.status === 'done')
+  const doing = items.filter(p => p.status === 'doing')
+  const current = doing[0] ?? items.find(p => p.status === 'todo')
+  const word = current === undefined ? 'Done' : current.num !== undefined ? `Phase ${current.num}` : 'Tasks'
+
+  return {
+    label: project,
+    mark: current === undefined ? 'tick' : 'dot',
+    fraction: (done.length + doing.length * 0.5) / items.length,
+    pillWord: word,
+    pillCount: `${done.length + (doing.length > 0 ? 1 : 0)}/${items.length}`,
+    pillIcon: current === undefined ? 'tick' : undefined,
+    color: current === undefined ? INK.green : INK.purple,
+    parts: items.length,
+    right: `${Math.round((done.length / items.length) * 100)}%`,
+  }
+}
+
 // register.tsx hooks each of these events once for the whole plugin and calls both halves.
 let stopTimer: (() => void) | undefined
 
@@ -329,15 +369,8 @@ export const register: Register = on => {
     const { Box, Button, Svg, Text } = $.ui.resolve(e)
     const snap = await read($, snapshot)
     const reached = await read($, used)
-    const fromFile = await read($, phases)
-    const live = await read($, plan)
     const now = await $.clock.now()
-    const plotted = await read($, written)
-    // A written phase plan first, then Claude's task list, then the project's phases file.
-    const isLive = live !== null && live.items.length > 0
-    const source = plotted !== null ? "Claude's plan" : isLive ? 'task list' : '.claude/phases.json'
-    const items: Phase[] | null =
-      plotted !== null ? withStatus(plotted, snap?.branch ?? '', live) : isLive ? live.items : fromFile
+    const { items, source, live } = await currentPlan($)
 
     if (items === null) {
       return (
@@ -354,19 +387,7 @@ export const register: Register = on => {
     const started = live?.startedAt ?? null
     const spent = (p: Phase) => (p.startedAt === undefined ? '' : clock((p.endedAt ?? now) - p.startedAt))
 
-    // The plan as a whole: one bar, its pill naming the phase under way.
-    const word = current === undefined ? 'Done' : current.num !== undefined ? `Phase ${current.num}` : 'Tasks'
-    const overall: BarRow = {
-      label: snap?.project ? snap.project : 'Plan',
-      mark: current === undefined ? 'tick' : 'dot',
-      fraction: (done.length + doing.length * 0.5) / items.length,
-      pillWord: word,
-      pillCount: `${done.length + (doing.length > 0 ? 1 : 0)}/${items.length}`,
-      pillIcon: current === undefined ? 'tick' : undefined,
-      color: current === undefined ? INK.green : INK.purple,
-      parts: items.length,
-      right: `${Math.round((done.length / items.length) * 100)}%`,
-    }
+    const overall = overallRow(items, snap?.project ? snap.project : 'Plan')
 
     const row = (p: Phase): StackRow => {
       const isDone = p.status === 'done'

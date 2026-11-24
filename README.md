@@ -6,13 +6,13 @@ It has two parts.
 
 ## The band above the prompt
 
-In the desktop and mobile apps: ring gauges for context and usage (with the time to each reset), then dotted progress rows with a status pill for evals and CI. The terminal gets the same as plain colored text.
+In the desktop and mobile apps: ring gauges for context and usage (with the time to each reset), then dotted progress rows with a status pill for evals (or the branch) and CI, and under them the plan as one bar (the phase list stays in the sidebar). The terminal gets the same as plain colored text.
 
 | Line | Shows |
 | --- | --- |
 | 1 | Model · context, 5-hour and 7-day usage as percentages · the skills, hub specialists (`hub › spoke`) and subagents this turn used |
 | 2 | Git branch, ahead/behind, changed files · the latest GitHub Actions run on the branch · the latest plugin eval pass rate |
-| 3 | The skills, hub specialists and subagents this turn used · the macro buttons below |
+| 3 | The skills, hub specialists and subagents this turn used, then the macro buttons on the right, in three groups |
 
 - CI comes from `gh run list`, so it needs the GitHub CLI signed in, and is asked at most every 2 minutes.
 - Evals come from the newest `.json` in `evals/results/` (a `claude plugin eval --json` report). A project without that folder shows no evals.
