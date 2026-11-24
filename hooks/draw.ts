@@ -16,7 +16,8 @@ export const INK = {
 } as const
 
 const FONT = "Inter, 'Segoe UI', system-ui, sans-serif"
-const WIDTH = 900
+// The band is about 850-950 px wide; the sidebar pane about 400.
+const WIDTH = 860
 
 function esc(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -63,10 +64,10 @@ export type BarRow = {
 let serial = 0
 
 export function barRows(rows: BarRow[]): string {
-  const rowH = 46
+  const rowH = 50
   const height = rows.length * rowH + 8
-  const x0 = 300
-  const x1 = 790
+  const x0 = 250
+  const x1 = WIDTH - 120
   const span = x1 - x0
   const body: string[] = []
   const defs: string[] = []
@@ -92,7 +93,7 @@ export function barRows(rows: BarRow[]): string {
       body.push(`<path d="M10 ${mid} l4.5 4.5 l8 -9" fill="none" stroke="${markColor}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`)
     else body.push(`<text x="14" y="${mid + 6}" font-size="18" font-weight="800" fill="${markColor}">!</text>`)
     body.push(
-      `<text x="34" y="${mid + 6}" font-size="17" font-weight="600" fill="${INK.text}">${esc(clip(row.label, 17, x0 - 50))}</text>`,
+      `<text x="34" y="${mid + 6}" font-size="18" font-weight="600" fill="${INK.text}">${esc(clip(row.label, 18, x0 - 46))}</text>`,
     )
 
     // The track, the dotted fill fading in from the left, and the tick marks.
@@ -111,7 +112,7 @@ export function barRows(rows: BarRow[]): string {
 
     // The pill sits at the end of the fill.
     const icon = row.pillIcon === undefined ? 0 : 20
-    const pillW = 26 + icon + textWidth(row.pillWord, 16, true) + 8 + textWidth(row.pillCount, 16)
+    const pillW = 28 + icon + textWidth(row.pillWord, 17, true) + 8 + textWidth(row.pillCount, 17)
     const px = Math.max(x0, Math.min(x0 + fillW - pillW, x1 - pillW))
     body.push(`<rect x="${px}" y="${y + 4}" width="${pillW}" height="30" rx="15" fill="${row.color}"/>`)
     let tx = px + 13
@@ -122,11 +123,11 @@ export function barRows(rows: BarRow[]): string {
       body.push(`<path d="M${tx + 1} ${mid - 5} l9 9 M${tx + 10} ${mid - 5} l-9 9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>`)
     tx += icon
     body.push(
-      `<text x="${tx}" y="${mid + 6}" font-size="16" fill="#fff"><tspan font-weight="700">${esc(row.pillWord)}</tspan><tspan dx="8" fill-opacity="0.85">${esc(row.pillCount)}</tspan></text>`,
+      `<text x="${tx}" y="${mid + 6}" font-size="17" fill="#fff"><tspan font-weight="700">${esc(row.pillWord)}</tspan><tspan dx="8" fill-opacity="0.85">${esc(row.pillCount)}</tspan></text>`,
     )
 
     body.push(
-      `<text x="${WIDTH - 14}" y="${mid + 6}" font-size="17" text-anchor="end" fill="${INK.muted}">${esc(row.right ?? `${Math.round(f * 100)}%`)}</text>`,
+      `<text x="${WIDTH - 14}" y="${mid + 6}" font-size="18" text-anchor="end" fill="${INK.muted}">${esc(row.right ?? `${Math.round(f * 100)}%`)}</text>`,
     )
   })
 
@@ -165,8 +166,8 @@ export function gaugeRow(model: string, gauges: Gauge[]): string {
   const body: string[] = []
   let x = 14
 
-  body.push(`<text x="${x}" y="${cy + 6}" font-size="17" font-weight="700" fill="${INK.orange}">${esc(model)}</text>`)
-  x += textWidth(model, 17, true) + 30
+  body.push(`<text x="${x}" y="${cy + 6}" font-size="18" font-weight="700" fill="${INK.orange}">${esc(model)}</text>`)
+  x += textWidth(model, 18, true) + 30
 
   for (const g of gauges) {
     const pct = Math.max(0, Math.min(100, g.percent))
@@ -186,10 +187,10 @@ export function gaugeRow(model: string, gauges: Gauge[]): string {
 
     const pctText = `${Math.round(pct)}%`
     body.push(
-      `<text x="${x}" y="${cy + 6}" font-size="18"><tspan font-weight="700" fill="${INK.text}">${pctText}</tspan>` +
+      `<text x="${x}" y="${cy + 7}" font-size="19"><tspan font-weight="700" fill="${INK.text}">${pctText}</tspan>` +
         `<tspan dx="9" fill="${INK.muted}">${esc(g.caption)}</tspan></text>`,
     )
-    x += textWidth(pctText, 18, true) + 9 + textWidth(g.caption, 18) + 40
+    x += textWidth(pctText, 19, true) + 9 + textWidth(g.caption, 19) + 40
   }
 
   // A row longer than the slot is drawn smaller rather than cut off.
@@ -217,23 +218,23 @@ export function timeLeft(iso: string | undefined, now: number): string {
   return `${minutes}m`
 }
 
-const SIDE = 600
+const SIDE = 400
 
 /** A row of stat tiles, such as Cost, Tokens and Time. */
 export function statTiles(tiles: { label: string; value: string }[]): string {
-  const gap = 12
+  const gap = 8
   const w = (SIDE - gap * (tiles.length - 1)) / tiles.length
   const body = tiles.map((t, i) => {
     const x = i * (w + gap)
 
     return (
-      `<rect x="${x + 1}" y="1" width="${w - 2}" height="70" rx="12" fill="${INK.track}" stroke="#3a3f48"/>` +
-      `<text x="${x + 16}" y="28" font-size="15" fill="${INK.muted}">${esc(t.label)}</text>` +
-      `<text x="${x + 16}" y="56" font-size="21" font-weight="700" fill="${INK.text}">${esc(clip(t.value, 21, w - 28))}</text>`
+      `<rect x="${x + 1}" y="1" width="${w - 2}" height="66" rx="10" fill="${INK.track}" stroke="#3a3f48"/>` +
+      `<text x="${x + 12}" y="25" font-size="13" fill="${INK.muted}">${esc(t.label)}</text>` +
+      `<text x="${x + 12}" y="52" font-size="18" font-weight="700" fill="${INK.text}">${esc(clip(t.value, 18, w - 22))}</text>`
     )
   })
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} 72" width="100%" font-family="${FONT}">${body.join('')}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} 68" width="100%" font-family="${FONT}">${body.join('')}</svg>`
 }
 
 export type StackRow = BarRow & {
@@ -289,22 +290,22 @@ export function stackRows(rows: StackRow[]): string {
       body.push(`<path d="M3 ${y + 13} l4.5 4.5 l8 -9" fill="none" stroke="${markColor}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`)
     else body.push(`<text x="5" y="${y + 19}" font-size="18" font-weight="800" fill="${markColor}">!</text>`)
 
-    for (const line of wrap(row.label, 18, SIDE - 30, 2)) {
-      body.push(`<text x="26" y="${y + 19}" font-size="18" font-weight="700" fill="${INK.text}">${esc(line)}</text>`)
-      y += 24
+    for (const line of wrap(row.label, 15.5, SIDE - 30, 2)) {
+      body.push(`<text x="26" y="${y + 19}" font-size="15.5" font-weight="700" fill="${INK.text}">${esc(line)}</text>`)
+      y += 21
     }
 
     if (row.status !== undefined || row.details !== undefined) {
       const status = row.status === undefined ? '' : `<tspan fill="${row.status.color}" font-weight="600">${esc(row.status.text)}</tspan>`
-      const details = row.details === undefined ? '' : `<tspan dx="8" fill="${INK.muted}">${esc(clip(row.details, 15, SIDE - 140))}</tspan>`
-      body.push(`<text x="26" y="${y + 16}" font-size="15">${status}${details}</text>`)
+      const details = row.details === undefined ? '' : `<tspan dx="8" fill="${INK.muted}">${esc(clip(row.details, 13, SIDE - 110))}</tspan>`
+      body.push(`<text x="26" y="${y + 15}" font-size="13">${status}${details}</text>`)
       y += 22
     }
 
     for (const line of (row.lines ?? []).slice(0, 4)) {
-      for (const part of wrap(line, 14, SIDE - 50, 2)) {
-        body.push(`<text x="40" y="${y + 15}" font-size="14" fill="${INK.muted}">${esc(part)}</text>`)
-        y += 19
+      for (const part of wrap(line, 12.5, SIDE - 50, 2)) {
+        body.push(`<text x="40" y="${y + 15}" font-size="12.5" fill="${INK.muted}">${esc(part)}</text>`)
+        y += 17
       }
     }
 
@@ -314,17 +315,17 @@ export function stackRows(rows: StackRow[]): string {
     }
 
     if (row.criteria !== undefined) {
-      const lines = wrap(row.criteria, 14, SIDE - 130, 2)
-      body.push(`<text x="40" y="${y + 15}" font-size="14" font-weight="600" fill="${INK.amber}">เกณฑ์ผ่าน</text>`)
+      const lines = wrap(row.criteria, 12.5, SIDE - 118, 2)
+      body.push(`<text x="40" y="${y + 15}" font-size="12.5" font-weight="600" fill="${INK.amber}">เกณฑ์ผ่าน</text>`)
       lines.forEach((line, k) => {
-        body.push(`<text x="118" y="${y + 15 + k * 19}" font-size="14" fill="${INK.muted}">${esc(line)}</text>`)
+        body.push(`<text x="106" y="${y + 15 + k * 17}" font-size="12.5" fill="${INK.muted}">${esc(line)}</text>`)
       })
-      y += 19 * lines.length
+      y += 17 * lines.length
     }
 
     // The bar.
     const bx0 = 26
-    const bx1 = SIDE - 70
+    const bx1 = SIDE - 56
     const span = bx1 - bx0
     const fillW = Math.max(f > 0 ? 24 : 0, span * f)
     const by = y + 8
@@ -345,7 +346,7 @@ export function stackRows(rows: StackRow[]): string {
     }
 
     const icon = row.pillIcon === undefined ? 0 : 18
-    const pillW = 22 + icon + textWidth(row.pillWord, 14, true) + (row.pillCount === '' ? 0 : 7 + textWidth(row.pillCount, 14))
+    const pillW = 22 + icon + textWidth(row.pillWord, 13, true) + (row.pillCount === '' ? 0 : 7 + textWidth(row.pillCount, 13))
     const px = Math.max(bx0, Math.min(bx0 + fillW - pillW, bx1 - pillW))
     const pmid = by + 11
     body.push(`<rect x="${px}" y="${by - 2}" width="${pillW}" height="26" rx="13" fill="${row.color}"/>`)
@@ -357,11 +358,11 @@ export function stackRows(rows: StackRow[]): string {
       body.push(`<path d="M${tx + 1} ${pmid - 4.5} l8 8 M${tx + 9} ${pmid - 4.5} l-8 8" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`)
     tx += icon
     body.push(
-      `<text x="${tx}" y="${pmid + 5}" font-size="14" fill="#fff"><tspan font-weight="700">${esc(row.pillWord)}</tspan>` +
+      `<text x="${tx}" y="${pmid + 5}" font-size="13" fill="#fff"><tspan font-weight="700">${esc(row.pillWord)}</tspan>` +
         (row.pillCount === '' ? '' : `<tspan dx="7" fill-opacity="0.85">${esc(row.pillCount)}</tspan>`) +
         `</text>`,
     )
-    body.push(`<text x="${SIDE - 4}" y="${pmid + 5}" font-size="15" text-anchor="end" fill="${INK.muted}">${esc(row.right ?? `${Math.round(f * 100)}%`)}</text>`)
+    body.push(`<text x="${SIDE - 4}" y="${pmid + 5}" font-size="13" text-anchor="end" fill="${INK.muted}">${esc(row.right ?? `${Math.round(f * 100)}%`)}</text>`)
 
     y = by + 22 + 22
     if (y - top < 10) y = top + 10
@@ -396,7 +397,7 @@ function ago(seconds: number, nowMs: number): string {
 /** The branch list: name and age, the last commit's subject, then status chips. */
 export function branchRows(rows: BranchRow[], nowMs: number): string {
   const body: string[] = []
-  const rowH = 62
+  const rowH = 56
   let y = 0
 
   for (const row of rows) {
@@ -411,8 +412,8 @@ export function branchRows(rows: BranchRow[], nowMs: number): string {
 
     const age = ago(row.committedAt, nowMs)
     body.push(
-      `<text x="30" y="${mid + 6}" font-size="17" font-weight="700" fill="${row.isCurrent ? INK.text : '#c9ced8'}">${esc(clip(row.name, 17, SIDE - 110))}</text>`,
-      `<text x="${SIDE - 10}" y="${mid + 6}" font-size="14" text-anchor="end" fill="${INK.muted}">${esc(age)}</text>`,
+      `<text x="30" y="${mid + 6}" font-size="15" font-weight="700" fill="${row.isCurrent ? INK.text : '#c9ced8'}">${esc(clip(row.name, 15, SIDE - 80))}</text>`,
+      `<text x="${SIDE - 10}" y="${mid + 5}" font-size="12.5" text-anchor="end" fill="${INK.muted}">${esc(age)}</text>`,
     )
 
     // Chips first, then the commit subject in what room is left.
@@ -420,16 +421,18 @@ export function branchRows(rows: BranchRow[], nowMs: number): string {
     const cy = y + 32
 
     for (const chip of row.chips) {
-      const w = textWidth(chip.text, 12.5, true) + 16
+      const w = textWidth(chip.text, 11.5, true) + 14
+
+      if (x + w > SIDE - 6) break
       body.push(
-        `<rect x="${x}" y="${cy}" width="${w}" height="20" rx="10" fill="${chip.color}" fill-opacity="0.18" stroke="${chip.color}" stroke-opacity="0.55"/>`,
-        `<text x="${x + 8}" y="${cy + 14}" font-size="12.5" font-weight="700" fill="${chip.color}">${esc(chip.text)}</text>`,
+        `<rect x="${x}" y="${cy}" width="${w}" height="19" rx="9.5" fill="${chip.color}" fill-opacity="0.18" stroke="${chip.color}" stroke-opacity="0.55"/>`,
+        `<text x="${x + 7}" y="${cy + 13.5}" font-size="11.5" font-weight="700" fill="${chip.color}">${esc(chip.text)}</text>`,
       )
       x += w + 6
     }
 
-    if (row.subject !== '' && SIDE - x - 14 > 60) {
-      body.push(`<text x="${x + 4}" y="${cy + 14}" font-size="13" fill="${INK.faint}">${esc(clip(row.subject, 13, SIDE - x - 18))}</text>`)
+    if (row.subject !== '' && SIDE - x - 14 > 50) {
+      body.push(`<text x="${x + 4}" y="${cy + 13.5}" font-size="11.5" fill="${INK.faint}">${esc(clip(row.subject, 11.5, SIDE - x - 14))}</text>`)
     }
 
     y += rowH
