@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
-import { barRows, gaugeRow, INK, textBar, timeLeft } from './draw'
+import { barRows, gaugeRow, INK, timeLeft } from './draw'
 import type { BarRow, Gauge } from './draw'
 import { currentPlan, overallRow } from './sidebar'
+import { termGauges, termRows } from './term'
 import type { CiInfo, EvalInfo, RepoInfo, SessionInfo, UsedInfo } from '../types'
 
 const repo = atom({ plugin: 'pitbox', key: 'bandRepo' } as const, null)
@@ -97,10 +98,6 @@ function shortModel(model: string): string {
 type Part = { text: string; color?: Color; dim?: boolean; bold?: boolean }
 
 const SEP: Part = { text: '  ·  ', dim: true }
-
-function level(pct: number, good: number, ok: number): Color {
-  return pct >= good ? 'success' : pct >= ok ? 'warning' : 'error'
-}
 
 function joinGroups(groups: Part[][]): Part[] {
   return groups.flatMap((group, i) => (i === 0 ? group : [SEP, ...group]))
@@ -216,19 +213,6 @@ async function refreshNow($: EngineInterface): Promise<void> {
   await refresh($)
 }
 
-const LIMIT_LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'spend' }
-
-function ciPart(build: CiInfo): Part {
-  if (build.status !== 'completed') {
-    return { text: `${build.status.replace(/_/g, ' ')}…`, color: 'warning' }
-  }
-
-  const color: Color =
-    build.conclusion === 'success' ? 'success' : build.conclusion === 'skipped' || build.conclusion === 'cancelled' ? 'subtle' : 'error'
-
-  return { text: build.conclusion === 'success' ? `✓ ${build.workflow}` : `✗ ${build.workflow} ${build.conclusion}`, color }
-}
-
 // register.tsx hooks each of these events once for the whole plugin and calls both halves.
 let stopTimer: (() => void) | undefined
 
@@ -331,8 +315,8 @@ export const register: Register = on => {
     const { Box, Button, Svg, Text } = $.ui.resolve(e)
     const macros = macroRow($, { Box, Button, Text })
 
-    // The desktop and mobile apps draw SVG: ring gauges and progress rows, as in a mission board.
-    if (e.surface === 'desktop' || e.surface === 'mobile') {
+    // The same facts on every surface: ring gauges, progress rows, then skills and buttons.
+    {
       const now = await $.clock.now()
       const gauges: Gauge[] = []
 
@@ -421,11 +405,36 @@ export const register: Register = on => {
       if (reached.agents.length > 0) skills.push([{ text: 'agent ', dim: true }, { text: reached.agents.join(', '), color: 'remember' }])
       if (skills.length === 0) skills.push([{ text: 'no skill this turn', dim: true }])
 
+      const model = live === null ? '' : shortModel(live.model)
+
+      if (e.surface === 'desktop' || e.surface === 'mobile') {
+        return (
+          <Box flexDirection="column">
+            {live !== null && <Svg source={gaugeRow(model, gauges)} alt={`${model} usage meters`} />}
+            {rows.length > 0 && <Svg source={barRows(rows)} alt="Evals, CI and plan progress" />}
+            <Box justifyContent="space-between">
+              <Text>
+              {joinGroups(skills).map((part, i) => (
+                <Text key={String(i)} color={part.color} dimColor={part.dim} weight={part.bold ? 'semibold' : undefined}>
+                  {part.text}
+                </Text>
+              ))}
+            </Text>
+              {macros.buttons}
+            </Box>
+            {macros.hints}
+          </Box>
+        )
+      }
+
+      // A terminal: the same card, in a border, with the buttons worded and grouped.
+      const columns = Math.max(40, (e.props.bodyColumns ?? 80) - 4)
+
       return (
-        <Box flexDirection="column">
-          {live !== null && <Svg source={gaugeRow(shortModel(live.model), gauges)} alt={`${shortModel(live.model)} usage meters`} />}
-          {rows.length > 0 && <Svg source={barRows(rows)} alt="Evals and CI progress" />}
-          <Box justifyContent="space-between">
+        <Box flexDirection="column" borderStyle="round" borderColor={INK.faint} paddingX={1}>
+          {live !== null && termGauges({ Box, Text }, model, gauges)}
+          {rows.length > 0 && termRows({ Box, Text }, rows, columns)}
+          <Box flexWrap="wrap" justifyContent="space-between" columnGap={2}>
             <Text>
               {joinGroups(skills).map((part, i) => (
                 <Text key={String(i)} color={part.color} dimColor={part.dim} weight={part.bold ? 'semibold' : undefined}>
@@ -433,138 +442,23 @@ export const register: Register = on => {
                 </Text>
               ))}
             </Text>
-            {macros.buttons}
+            <Box flexWrap="wrap" columnGap={1}>
+              {MACROS.map((macro, i) => (
+                <Box key={`t-${macro.id}`} columnGap={1}>
+                  {i > 0 && MACROS[i - 1].group !== macro.group && <Text color={INK.faint}>│</Text>}
+                  <Button
+                    key={macro.id}
+                    label={macro.short}
+                    hotkey={macro.key}
+                    plain
+                    onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
+                  />
+                </Box>
+              ))}
+            </Box>
           </Box>
-          {macros.hints}
         </Box>
       )
     }
-
-    const textPlan = await currentPlan($)
-    const planDone = textPlan.items === null ? 0 : textPlan.items.filter(p => p.status === 'done').length
-
-    // Line 1: the model, every usage percentage, then the skills and agents this turn reached for.
-    const first: Part[][] = []
-
-    if (live !== null) {
-      const group: Part[] = [{ text: shortModel(live.model), color: 'claude', bold: true }]
-      const meters: [string, number][] = []
-
-      if (live.contextPercent !== null) meters.push(['ctx', live.contextPercent])
-      // State saved by an older version has no `limits` until the next refresh.
-      for (const limit of live.limits ?? []) meters.push([LIMIT_LABEL[limit.kind] ?? limit.kind, limit.percentUsed])
-
-      for (const [label, value] of meters) {
-        const pct = Math.round(value)
-        // A low fill is good, so the scale runs the other way round.
-        const color = level(100 - pct, 50, 20)
-        const [full, empty] = textBar(pct / 100, 6)
-        group.push({ text: `  ${label} `, dim: true }, { text: full, color }, { text: empty, dim: true }, { text: ` ${pct}%`, color })
-      }
-
-      first.push(group)
-    }
-
-    if (reached.skills.length > 0 || reached.spokes.length > 0) {
-      const group: Part[] = [
-        { text: 'skill ', dim: true },
-        { text: reached.skills.length > 0 ? reached.skills.join(', ') : '—', color: 'suggestion', bold: true },
-      ]
-
-      if (reached.spokes.length > 0) {
-        group.push({ text: ' › ', dim: true }, { text: reached.spokes.join(', '), color: 'merged' })
-      }
-
-      first.push(group)
-    }
-
-    if (reached.agents.length > 0) {
-      first.push([{ text: 'agent ', dim: true }, { text: reached.agents.join(', '), color: 'remember' }])
-    }
-
-    if (reached.skills.length + reached.spokes.length + reached.agents.length === 0) {
-      first.push([{ text: 'no skill this turn', dim: true }])
-    }
-
-    // Line 2: git branch and status, then CI and the eval tests.
-    const second: Part[][] = []
-
-    if (info !== null) {
-      const group: Part[] = [{ text: `⎇ ${info.branch}`, color: 'suggestion' }]
-
-      if (info.ahead > 0) group.push({ text: ` ↑${info.ahead}`, color: 'merged' })
-      if (info.behind > 0) group.push({ text: ` ↓${info.behind}`, color: 'error' })
-
-      second.push(group)
-      second.push(
-        info.changed + info.untracked === 0
-          ? [{ text: 'clean', color: 'success' }]
-          : [
-              { text: `${info.changed} changed`, color: 'warning' },
-              { text: ', ', dim: true },
-              { text: `${info.untracked} untracked`, color: 'subtle' },
-            ],
-      )
-    }
-
-    if (build !== null) {
-      second.push([{ text: 'ci ', dim: true }, ciPart(build)])
-    }
-
-    if (result !== null) {
-      const pct = Math.round((result.passed / result.total) * 100)
-      second.push([
-        { text: 'evals ', dim: true },
-        { text: `${result.passed}/${result.total} (${pct}%)`, color: level(pct, 85, 60) },
-      ])
-    }
-
-    if (textPlan.items !== null) {
-      const pct = Math.round((planDone / textPlan.items.length) * 100)
-      const [full, empty] = textBar(planDone / textPlan.items.length, 8)
-      second.push([
-        { text: 'plan ', dim: true },
-        { text: full, color: level(pct, 80, 40) },
-        { text: empty, dim: true },
-        { text: ` ${planDone}/${textPlan.items.length}`, color: level(pct, 80, 40) },
-      ])
-    }
-
-    const line = (parts: Part[]) => (
-      <Text>
-        {parts.map((part, i) => (
-          <Text key={String(i)} color={part.color} dimColor={part.dim} weight={part.bold ? 'semibold' : undefined}>
-            {part.text}
-          </Text>
-        ))}
-      </Text>
-    )
-
-    return (
-      <Box flexDirection="column">
-        {line(joinGroups(first))}
-        {line(joinGroups(second))}
-        {e.surface === 'terminal' ? (
-          // A terminal draws a plain Button as "key: word", clearer than a lone glyph.
-          <Box flexWrap="wrap" columnGap={2}>
-            {MACROS.map(macro => (
-              <Button
-                key={macro.id}
-                label={macro.short}
-                hotkey={macro.key}
-                plain
-                dimColor
-                onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
-              />
-            ))}
-          </Box>
-        ) : (
-          <Box flexDirection="column">
-            {macros.buttons}
-            {macros.hints}
-          </Box>
-        )}
-      </Box>
-    )
   })
 }

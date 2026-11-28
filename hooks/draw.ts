@@ -384,7 +384,7 @@ export type BranchRow = {
   chips: { text: string; color: string }[]
 }
 
-function ago(seconds: number, nowMs: number): string {
+export function ago(seconds: number, nowMs: number): string {
   const s = Math.max(0, Math.floor(nowMs / 1000 - seconds))
 
   if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m`
@@ -441,9 +441,3 @@ export function branchRows(rows: BranchRow[], nowMs: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} ${Math.max(y, 10)}" width="100%" font-family="${FONT}">${body.join('')}</svg>`
 }
 
-/** A bar of box-drawing characters for a terminal: the filled run, then the empty one. */
-export function textBar(fraction: number, width: number): [string, string] {
-  const filled = Math.max(0, Math.min(width, Math.round(fraction * width)))
-
-  return ['━'.repeat(filled), '─'.repeat(width - filled)]
-}

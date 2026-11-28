@@ -1,13 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
-import { branchRows, INK, stackRows, statTiles, textBar } from './draw'
+import { branchRows, INK, stackRows, statTiles } from './draw'
 import type { BarRow, BranchRow, StackRow } from './draw'
+import { termBranches, termStack, termTiles } from './term'
 import type { BranchInfo, Branches, Phase, Plan, Snapshot, Used } from '../types'
 
 const PANE = 'pitbox'
 const TITLE = 'Pitbox'
 const REFRESH_MS = 15_000
+// The ground a terminal pane is painted with, the dark of the band beside it; the engine's own
+// pane color is a lighter blue.
+const TERM_GROUND = '#282c34'
 
 // Change a tag when the shape it guards changes: it declines what an earlier version stored.
 const snapshot = atom({ plugin: 'pitbox', key: 'snapshot' } as const, null, { shape: 'snapshot-2' })
@@ -495,6 +499,33 @@ export const register: Register = on => {
     const { items, source, live } = await currentPlan($)
     const branchData = await read($, branches)
     const shown = (branchData?.list ?? []).slice(0, 12)
+    const isTerminal = e.surface === 'terminal'
+    const columns = Math.max(24, (e.props.bodyColumns ?? 44) - 4)
+    // In a terminal the whole body sits on one ground, filled to the pane's height.
+    const grounded = (body: JSX.Element) =>
+      isTerminal ? (
+        <Box
+          flexDirection="column"
+          backgroundColor={TERM_GROUND}
+          paddingX={1}
+          width={e.props.bodyColumns}
+          minHeight={e.props.scroll?.bodyRows}
+        >
+          {body}
+        </Box>
+      ) : (
+        body
+      )
+    const branchList: BranchRow[] =
+      branchData === null
+        ? []
+        : shown.map(b => ({
+            name: b.name,
+            isCurrent: b.isCurrent,
+            committedAt: b.committedAt,
+            subject: b.subject,
+            chips: branchChips(b, branchData.defaultBranch),
+          }))
     const branchSection =
       branchData === null || shown.length === 0 ? null : (
         <Box key="branches" flexDirection="column">
@@ -502,109 +533,20 @@ export const register: Register = on => {
             Branches · {branchData.list.length}
             {branchData.list.length > shown.length ? ` (newest ${shown.length})` : ''}
           </Text>
-          <Svg
-            source={branchRows(
-              shown.map(b => ({
-                name: b.name,
-                isCurrent: b.isCurrent,
-                committedAt: b.committedAt,
-                subject: b.subject,
-                chips: branchChips(b, branchData.defaultBranch),
-              })),
-              now,
-            )}
-            alt={`Branches: ${shown.map(b => b.name).join(', ')}`}
-          />
-        </Box>
-      )
-
-    // A terminal draws no SVG: the same facts as lines of text.
-    if (e.surface === 'terminal') {
-      const width = Math.max(20, e.props.bodyColumns ?? 40)
-      const barWidth = Math.max(8, Math.min(30, width - 16))
-      const doneCount = (items ?? []).filter(p => p.status === 'done').length
-      const [full, empty] = textBar(items === null || items.length === 0 ? 0 : doneCount / items.length, barWidth)
-      const chipColor = (hex: string): Color =>
-        hex === INK.green ? 'success' : hex === INK.amber ? 'warning' : hex === INK.red ? 'error' : hex === INK.purple ? 'merged' : hex === INK.blue ? 'suggestion' : 'subtle'
-
-      return (
-        <Box flexDirection="column">
-          <Text dimColor wrap="truncate-end">
-            {typeof snap?.costUsd === 'number' ? `$${snap.costUsd.toFixed(2)}` : '$—'} ·{' '}
-            {typeof snap?.contextTokens === 'number' ? `${kilo(snap.contextTokens)} tokens` : 'no tokens yet'}
-          </Text>
-
-          {items === null ? (
-            <Text dimColor>No plan yet: Claude's phases, its task list, or .claude/phases.json show here.</Text>
+          {isTerminal ? (
+            termBranches({ Box, Text }, branchList, now)
           ) : (
-            <Box flexDirection="column" marginTop={1}>
-              <Text weight="semibold">Plan · {source}</Text>
-              <Text>
-                <Text color="success">{full}</Text>
-                <Text dimColor>{empty}</Text>
-                <Text> {doneCount}/{items.length}</Text>
-              </Text>
-              {items.map(p => (
-                <Box key={p.name} flexDirection="column">
-                  <Text
-                    wrap="truncate-end"
-                    color={p.status === 'done' ? 'success' : p.status === 'doing' ? 'warning' : undefined}
-                    dimColor={p.status === 'todo'}
-                  >
-                    {p.status === 'done' ? '✓' : p.status === 'doing' ? '▶' : '○'} {p.name}
-                    {p.startedAt === undefined ? '' : `  ${clock((p.endedAt ?? now) - p.startedAt)}`}
-                  </Text>
-                  {p.status === 'doing' &&
-                    (p.steps ?? []).slice(0, 4).map((step, i) => (
-                      <Text key={`s${i}`} dimColor wrap="truncate-end">
-                        {'    '}· {step}
-                      </Text>
-                    ))}
-                  {p.status === 'doing' && p.criteria !== undefined && (
-                    <Text color="warning" wrap="truncate-end">
-                      {'    '}เกณฑ์ผ่าน: {p.criteria}
-                    </Text>
-                  )}
-                </Box>
-              ))}
-            </Box>
+            <Svg source={branchRows(branchList, now)} alt={`Branches: ${shown.map(b => b.name).join(', ')}`} />
           )}
-
-          {branchData !== null && shown.length > 0 && (
-            <Box flexDirection="column" marginTop={1}>
-              <Text weight="semibold">Branches · {branchData.list.length}</Text>
-              {shown.map(b => (
-                <Box key={b.name} flexDirection="column">
-                  <Text wrap="truncate-end" color={b.isCurrent ? 'suggestion' : undefined}>
-                    {b.isCurrent ? '●' : '○'} {b.name}
-                  </Text>
-                  <Text wrap="truncate-end">
-                    {'  '}
-                    {branchChips(b, branchData.defaultBranch).map((chip, i) => (
-                      <Text key={String(i)} color={chipColor(chip.color)}>
-                        {i > 0 ? ' · ' : ''}
-                        {chip.text}
-                      </Text>
-                    ))}
-                  </Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-
-          <Box marginTop={1}>
-            <Button key="refresh" label="refresh" hotkey="r" plain onPress={() => refresh($)} />
-          </Box>
         </Box>
       )
-    }
 
     if (items === null) {
-      return (
-        <Box flexDirection="column">
+      return grounded(
+        <Box flexDirection="column" rowGap={1}>
           <Text dimColor>No plan yet. Pitbox shows the phases Claude writes, its task list, or .claude/phases.json.</Text>
           {branchSection}
-        </Box>
+        </Box>,
       )
     }
 
@@ -639,11 +581,11 @@ export const register: Register = on => {
       }
     }
 
-    const tiles = statTiles([
+    const tiles = [
       { label: 'Cost', value: typeof snap?.costUsd === 'number' ? `≈$${snap.costUsd.toFixed(2)}` : '—' },
       { label: 'Tokens', value: typeof snap?.contextTokens === 'number' ? kilo(snap.contextTokens) : '—' },
       { label: 'Time', value: started === null ? '—' : clock(now - started) },
-    ])
+    ]
     const section = (title: string, list: Phase[]) =>
       list.length === 0 ? null : (
         <Box key={title} flexDirection="column">
@@ -651,23 +593,31 @@ export const register: Register = on => {
             {title} · {list.length}
             {title === 'Finished' && reached.agents.length > 0 ? `   ×${reached.agents.length} agents` : ''}
           </Text>
-          <Svg source={stackRows(list.map(row))} alt={`${title} phases: ${list.map(p => p.name).join(', ')}`} />
+          {isTerminal ? (
+            termStack({ Box, Text }, list.map(row), columns)
+          ) : (
+            <Svg source={stackRows(list.map(row))} alt={`${title} phases: ${list.map(p => p.name).join(', ')}`} />
+          )}
         </Box>
       )
 
-    return (
+    return grounded(
       <Box flexDirection="column" gap={1}>
         <Box>
           <Text dimColor>Phases · {source} </Text>
-          <Button key="refresh" label="↻" onPress={() => refresh($)} />
+          <Button key="refresh" label={isTerminal ? 'refresh' : '↻'} hotkey="r" plain={isTerminal ? true : undefined} onPress={() => refresh($)} />
         </Box>
-        <Svg source={tiles} alt="Cost, tokens and time" />
-        <Svg source={stackRows([overall])} alt={`${overall.label}: ${overall.pillWord} ${overall.pillCount}`} />
+        {isTerminal ? termTiles({ Box, Text }, tiles) : <Svg source={statTiles(tiles)} alt="Cost, tokens and time" />}
+        {isTerminal ? (
+          termStack({ Box, Text }, [overall], columns)
+        ) : (
+          <Svg source={stackRows([overall])} alt={`${overall.label}: ${overall.pillWord} ${overall.pillCount}`} />
+        )}
         {section('Running', doing)}
         {section('Waiting', waiting)}
         {section('Finished', done)}
         {branchSection}
-      </Box>
+      </Box>,
     )
   })
 }
