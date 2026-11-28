@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
-import { branchRows, INK, stackRows, statTiles } from './draw'
+import { branchRows, INK, stackRows, statTiles, textBar } from './draw'
 import type { BarRow, BranchRow, StackRow } from './draw'
 import type { BranchInfo, Branches, Phase, Plan, Snapshot, Used } from '../types'
 
@@ -426,7 +426,11 @@ export async function sidebarStart($: EngineInterface): Promise<void> {
   await refresh($)
   stopTimer?.()
   stopTimer = $.clock.every(REFRESH_MS, () => void refresh($))
-  void $.ui.open({ id: PANE, title: TITLE })
+
+  // In a terminal the pane would cover part of the conversation: there it opens on /pitbox.
+  if ((await $.session.surface()) !== 'terminal') {
+    void $.ui.open({ id: PANE, title: TITLE })
+  }
 }
 
 export async function sidebarSubmit($: EngineInterface): Promise<void> {
@@ -513,6 +517,87 @@ export const register: Register = on => {
           />
         </Box>
       )
+
+    // A terminal draws no SVG: the same facts as lines of text.
+    if (e.surface === 'terminal') {
+      const width = Math.max(20, e.props.bodyColumns ?? 40)
+      const barWidth = Math.max(8, Math.min(30, width - 16))
+      const doneCount = (items ?? []).filter(p => p.status === 'done').length
+      const [full, empty] = textBar(items === null || items.length === 0 ? 0 : doneCount / items.length, barWidth)
+      const chipColor = (hex: string): Color =>
+        hex === INK.green ? 'success' : hex === INK.amber ? 'warning' : hex === INK.red ? 'error' : hex === INK.purple ? 'merged' : hex === INK.blue ? 'suggestion' : 'subtle'
+
+      return (
+        <Box flexDirection="column">
+          <Text dimColor wrap="truncate-end">
+            {typeof snap?.costUsd === 'number' ? `$${snap.costUsd.toFixed(2)}` : '$—'} ·{' '}
+            {typeof snap?.contextTokens === 'number' ? `${kilo(snap.contextTokens)} tokens` : 'no tokens yet'}
+          </Text>
+
+          {items === null ? (
+            <Text dimColor>No plan yet: Claude's phases, its task list, or .claude/phases.json show here.</Text>
+          ) : (
+            <Box flexDirection="column" marginTop={1}>
+              <Text weight="semibold">Plan · {source}</Text>
+              <Text>
+                <Text color="success">{full}</Text>
+                <Text dimColor>{empty}</Text>
+                <Text> {doneCount}/{items.length}</Text>
+              </Text>
+              {items.map(p => (
+                <Box key={p.name} flexDirection="column">
+                  <Text
+                    wrap="truncate-end"
+                    color={p.status === 'done' ? 'success' : p.status === 'doing' ? 'warning' : undefined}
+                    dimColor={p.status === 'todo'}
+                  >
+                    {p.status === 'done' ? '✓' : p.status === 'doing' ? '▶' : '○'} {p.name}
+                    {p.startedAt === undefined ? '' : `  ${clock((p.endedAt ?? now) - p.startedAt)}`}
+                  </Text>
+                  {p.status === 'doing' &&
+                    (p.steps ?? []).slice(0, 4).map((step, i) => (
+                      <Text key={`s${i}`} dimColor wrap="truncate-end">
+                        {'    '}· {step}
+                      </Text>
+                    ))}
+                  {p.status === 'doing' && p.criteria !== undefined && (
+                    <Text color="warning" wrap="truncate-end">
+                      {'    '}เกณฑ์ผ่าน: {p.criteria}
+                    </Text>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          {branchData !== null && shown.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text weight="semibold">Branches · {branchData.list.length}</Text>
+              {shown.map(b => (
+                <Box key={b.name} flexDirection="column">
+                  <Text wrap="truncate-end" color={b.isCurrent ? 'suggestion' : undefined}>
+                    {b.isCurrent ? '●' : '○'} {b.name}
+                  </Text>
+                  <Text wrap="truncate-end">
+                    {'  '}
+                    {branchChips(b, branchData.defaultBranch).map((chip, i) => (
+                      <Text key={String(i)} color={chipColor(chip.color)}>
+                        {i > 0 ? ' · ' : ''}
+                        {chip.text}
+                      </Text>
+                    ))}
+                  </Text>
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          <Box marginTop={1}>
+            <Button key="refresh" label="refresh" hotkey="r" plain onPress={() => refresh($)} />
+          </Box>
+        </Box>
+      )
+    }
 
     if (items === null) {
       return (

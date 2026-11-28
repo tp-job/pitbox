@@ -63,7 +63,7 @@ Or load it from a folder: add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `en
 
 ## Limits
 
-- The band and sidebar draw in the desktop and mobile apps; the terminal shows neither.
+- The drawings are for the desktop and mobile apps. A terminal gets a text view: usage and plan bars, worded shortcut buttons, and the sidebar as lines of text. There the sidebar opens only on `/pitbox`.
 - The cost tile is the whole session's estimate, as `/cost` gives it, not the bill.
 - A running phase's bar is drawn half full: Pitbox does not know how far along a phase is.
 - A phase is not marked done when its branch merges; the task list has to say so.

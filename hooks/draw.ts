@@ -440,3 +440,10 @@ export function branchRows(rows: BranchRow[], nowMs: number): string {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIDE} ${Math.max(y, 10)}" width="100%" font-family="${FONT}">${body.join('')}</svg>`
 }
+
+/** A bar of box-drawing characters for a terminal: the filled run, then the empty one. */
+export function textBar(fraction: number, width: number): [string, string] {
+  const filled = Math.max(0, Math.min(width, Math.round(fraction * width)))
+
+  return ['━'.repeat(filled), '─'.repeat(width - filled)]
+}

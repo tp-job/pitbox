@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Color, EngineInterface, Register } from 'claude-code'
 
-import { barRows, gaugeRow, INK, timeLeft } from './draw'
+import { barRows, gaugeRow, INK, textBar, timeLeft } from './draw'
 import type { BarRow, Gauge } from './draw'
 import { currentPlan, overallRow } from './sidebar'
 import type { CiInfo, EvalInfo, RepoInfo, SessionInfo, UsedInfo } from '../types'
@@ -28,27 +28,29 @@ type Macro = {
   key: string
   /** What the button is called. */
   name: string
+  /** One word for the terminal. */
+  short: string
   /** What a press does, in a sentence. */
   does: string
   prompt?: string
 }
 
 const MACROS: Macro[] = [
-  { id: 'refresh', group: 'band', label: '↻', key: 'r', name: 'Refresh', does: 'reload git status, CI, eval results and usage now' },
-  { id: 'commit', group: 'git', label: '⊙', key: 'c', name: 'Commit', does: 'ask Claude to commit your current changes', prompt: COMMIT_PROMPT },
-  { id: 'pr', group: 'git', label: '⑂', key: 'p', name: 'Pull request', does: 'ask Claude to open a pull request for this branch', prompt: PR_PROMPT },
+  { id: 'refresh', short: 'refresh', group: 'band', label: '↻', key: 'r', name: 'Refresh', does: 'reload git status, CI, eval results and usage now' },
+  { id: 'commit', short: 'commit', group: 'git', label: '⊙', key: 'c', name: 'Commit', does: 'ask Claude to commit your current changes', prompt: COMMIT_PROMPT },
+  { id: 'pr', short: 'pr', group: 'git', label: '⑂', key: 'p', name: 'Pull request', does: 'ask Claude to open a pull request for this branch', prompt: PR_PROMPT },
   // Pushing is outward-facing, so the message asks Claude to say what it will push and wait.
   {
-    id: 'push', group: 'git',
+    id: 'push', short: 'push', group: 'git',
     label: '⇡',
     key: 'u',
     name: 'Push',
     does: 'ask Claude to push this branch; it tells you what goes where and waits for your yes',
     prompt: 'Push the current branch. Say which commits go to which remote and branch, and wait for my yes before pushing.',
   },
-  { id: 'test', group: 'work', label: '✓', key: 't', name: 'Run tests', does: 'ask Claude to run the tests and report what fails', prompt: 'Run the tests and report what fails.' },
-  { id: 'next', group: 'work', label: '▶', key: 'n', name: 'Continue', does: 'ask Claude to carry on with the next step of the plan', prompt: 'Continue with the next step of the plan.' },
-  { id: 'review', group: 'work', label: '⌕', key: 'v', name: 'Review', does: 'ask Claude to review your uncommitted changes for bugs', prompt: 'Review my uncommitted changes for bugs.' },
+  { id: 'test', short: 'test', group: 'work', label: '✓', key: 't', name: 'Run tests', does: 'ask Claude to run the tests and report what fails', prompt: 'Run the tests and report what fails.' },
+  { id: 'next', short: 'next', group: 'work', label: '▶', key: 'n', name: 'Continue', does: 'ask Claude to carry on with the next step of the plan', prompt: 'Continue with the next step of the plan.' },
+  { id: 'review', short: 'review', group: 'work', label: '⌕', key: 'v', name: 'Review', does: 'ask Claude to review your uncommitted changes for bugs', prompt: 'Review my uncommitted changes for bugs.' },
 ]
 
 const EVAL_DIR = 'evals/results'
@@ -455,7 +457,9 @@ export const register: Register = on => {
       for (const [label, value] of meters) {
         const pct = Math.round(value)
         // A low fill is good, so the scale runs the other way round.
-        group.push({ text: ` ${label} `, dim: true }, { text: `${pct}%`, color: level(100 - pct, 50, 20) })
+        const color = level(100 - pct, 50, 20)
+        const [full, empty] = textBar(pct / 100, 6)
+        group.push({ text: `  ${label} `, dim: true }, { text: full, color }, { text: empty, dim: true }, { text: ` ${pct}%`, color })
       }
 
       first.push(group)
@@ -517,9 +521,12 @@ export const register: Register = on => {
 
     if (textPlan.items !== null) {
       const pct = Math.round((planDone / textPlan.items.length) * 100)
+      const [full, empty] = textBar(planDone / textPlan.items.length, 8)
       second.push([
         { text: 'plan ', dim: true },
-        { text: `${planDone}/${textPlan.items.length} (${pct}%)`, color: level(pct, 80, 40) },
+        { text: full, color: level(pct, 80, 40) },
+        { text: empty, dim: true },
+        { text: ` ${planDone}/${textPlan.items.length}`, color: level(pct, 80, 40) },
       ])
     }
 
@@ -536,11 +543,27 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {line(joinGroups(first))}
-        <Box justifyContent="space-between">
-          {line(joinGroups(second))}
-          {macros.buttons}
-        </Box>
-        {macros.hints}
+        {line(joinGroups(second))}
+        {e.surface === 'terminal' ? (
+          // A terminal draws a plain Button as "key: word", clearer than a lone glyph.
+          <Box flexWrap="wrap" columnGap={2}>
+            {MACROS.map(macro => (
+              <Button
+                key={macro.id}
+                label={macro.short}
+                hotkey={macro.key}
+                plain
+                dimColor
+                onPress={() => (macro.prompt === undefined ? refreshNow($) : $.prompt.submit({ text: macro.prompt, asUser: true }))}
+              />
+            ))}
+          </Box>
+        ) : (
+          <Box flexDirection="column">
+            {macros.buttons}
+            {macros.hints}
+          </Box>
+        )}
       </Box>
     )
   })
